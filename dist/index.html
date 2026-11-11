@@ -381,7 +381,9 @@ table.plain th { background: var(--mint-2); }
     el.textContent = map[st][0]; el.className = 'sync ' + map[st][1];
   }
   function sbReq(method, path, body, token, extra) {
-    var headers = { apikey: SB.anonKey, Authorization: 'Bearer ' + (token || SB.anonKey), 'Content-Type': 'application/json' };
+    // ключ sb_publishable_... не JWT: он идёт только в apikey, а Authorization добавляем лишь с токеном пользователя
+    var headers = { apikey: SB.anonKey, 'Content-Type': 'application/json' };
+    if (token) headers.Authorization = 'Bearer ' + token;
     if (extra) Object.keys(extra).forEach(function (k) { headers[k] = extra[k]; });
     return fetch(SB.url.replace(/\/+$/, '') + path, { method: method, headers: headers, body: body ? JSON.stringify(body) : undefined }).then(function (r) {
       return r.text().then(function (t) { var j = null; try { j = t ? JSON.parse(t) : null; } catch (e) { /* не JSON */ } if (!r.ok) { var err = new Error((j && (j.msg || j.error_description || j.message)) || ('HTTP ' + r.status)); err.status = r.status; throw err; } return j; });
