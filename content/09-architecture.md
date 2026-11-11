@@ -176,3 +176,103 @@ final createGame = CreateGame(gameRepo);
 - Создать сущность, интерфейс репозитория, UseCase, реализацию и контроллер.
 - Объяснить каждую букву SOLID на своём коде.
 - Найти и убрать дублирование.
+
+## Подробно: путь данных на примере кнопки «Войти»
+
+Проследим, что происходит от нажатия до ответа, и **в каком слое** живёт каждый шаг.
+
+| Шаг | Слой | Что происходит |
+|---:|---|---|
+| 1 | Presentation | `LoginScreen`: нажатие кнопки, лог INFO, валидация формы |
+| 2 | Presentation | `LoginController.login(email, password)` включает `loading` |
+| 3 | Domain | `LoginUseCase`: правила («пароль не пустой»), вызывает `AuthRepository` (интерфейс) |
+| 4 | Data | `AuthRepositoryImpl`: вызывает `AuthRemoteSource` |
+| 5 | Data | `AuthRemoteSource`: вызывает `AuthApi` из сетевой библиотеки (через абстракцию) |
+| 6 | Сетевая библиотека | `HttpApiClient`: запрос на сервер, обработка ошибок |
+| 7 | Data | Ответ превращается из `UserDto` в `User` (маппер) |
+| 8 | Domain→Presentation | `User` возвращается контроллеру |
+| 9 | Presentation | Сохранение токена, переход на Landing; при ошибке SnackBar на 5 секунд |
+
+Стрелки зависимостей: Presentation → Domain ← Data. Domain **ничего не импортирует** ни из Presentation, ни из Data.
+
+## Подробно: как сделать, чтобы слои были «чистыми»
+
+Критерий: «Слой DOMAIN не содержит других слоёв» (1 балл за каждый слой в спринтах 3 и 4).
+
+Проверка за минуту:
+
+```bash
+# в Domain не должно быть импортов Data, Presentation, flutter, http
+grep -rnE "import .*(presentation|data|flutter|http)" lib/domain
+
+# в Presentation не должно быть импортов Data
+grep -rn "import .*data/" lib/presentation
+
+# в Data не должно быть импортов Presentation
+grep -rn "import .*presentation/" lib/data
+```
+
+Если нашли строки, исправьте:
+
+| Нашли | Как исправить |
+|---|---|
+| `Domain` импортирует `flutter` | Вынести виджет из Domain; в Domain только чистый Dart |
+| `Presentation` импортирует `data` | Заменить на интерфейс из `domain` |
+| `Data` использует `Controller` | Передавать результат через возвращаемое значение |
+| Общий код нужен всем | В `common` (константы, утилиты, DI) |
+
+Папка `common` разрешена заданием «для общих файлов», но не складывайте туда всё подряд: чем меньше в `common`, тем чище.
+
+## Подробно: GetX и слои
+
+Вы знаете GetX, поэтому поместим его по слоям:
+
+| Что | Слой | Пример |
+|---|---|---|
+| `GetxController` | Presentation | `LoginController` |
+| `Obx`, `GetBuilder` | Presentation | в экранах |
+| `Binding` | Presentation (или `common/di`) | Регистрация зависимостей для экрана |
+| `Get.put`, `Get.find` | `common/di` и Binding | Единственное место, которое знает про реализации |
+| `Get.snackbar` | Presentation | Ошибки |
+
+Правила, чтобы не нарушить SOLID:
+
+1. **Не вызывайте `Get.find` внутри UseCase/Repository**: зависимости передавайте через конструктор.
+2. Контроллер получает **UseCase**, а не репозиторий и не `http`.
+3. В Domain не должно быть `import 'package:get/get.dart'`.
+
+```dart
+class LoginBinding extends Bindings {
+  @override
+  void dependencies() {
+    Get.lazyPut<AuthRepository>(() => AuthRepositoryImpl(Get.find<AuthRemoteSource>()));
+    Get.lazyPut(() => LoginUseCase(Get.find<AuthRepository>()));
+    Get.lazyPut(() => LoginController(Get.find<LoginUseCase>()));
+  }
+}
+```
+
+## Подробно: DRY на практике — как искать дублирование
+
+1. Поиск копий: выделите кусок кода и поищите его по проекту (Ctrl+Shift+F).
+2. Если один и тот же блок встречается 2 раза и больше, вынесите в функцию, виджет или константу.
+3. Если куски отличаются парой значений, сделайте параметры.
+4. Если есть `if/else` по типу, который растёт, подумайте об `enum` и `switch` или об отдельных классах.
+
+Примеры из вашей симуляции и что с ними делать:
+
+| Было | Стало |
+|---|---|
+| 5 одинаковых `OutlineInputBorder(...)` | `OutlineInputBorder _border(Color c)` |
+| 3 копии пункта `_item(icon, label, ...)` | `items.map(_item)` по списку данных |
+| Цвета кнопки передаются снаружи во всех местах | `enum UiButtonKind` внутри компонента |
+| `fontSize: 16` в `copyWith` в десяти местах | Стиль `bodyMedium` с нужным размером |
+| `Logging()` создаётся в каждом виджете | Один статический `AppLog` |
+
+## Практика
+
+1. Нарисуйте слои и стрелки зависимостей для запроса «Список игр».
+2. Выполните grep-проверку на своём проекте и исправьте нарушения.
+3. Перепишите экран, где в `build` вызывается `http.get`, на схему Controller → UseCase → Repository.
+4. Найдите три места дублирования в своём коде и устраните.
+5. Объясните вслух SOLID на примере своего `AuthRepository`.

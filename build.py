@@ -13,7 +13,7 @@ STAGES = [
  (6, "Разборы спринтов", "Каждый спринт: что оценивают, порядок работы, код и частые ошибки.", "Пройти каждый спринт с секундомером и сравнить с чек-листом."),
  (7, "Финиш", "Тактика, приоритеты и подготовка комплекта шпаргалок.", "Провести полную репетицию спринтов 1–2 за отведённое время."),
 ]
-HOURS = {"start":1,"programming":2,"dart-basics":4,"dart-oop":4,"dart-async":3,"flutter-basics":4,"flutter-ui":5,"adaptive":4,"git":2,"architecture":5,"docs-logging":2,"sprint1":6,"sprint2":6,"sprint3":6,"sprint4":7,"sprint5":4,"sprint6":4,"points":2}
+HOURS = {"start":1,"programming":2,"dart-basics":4,"dart-oop":4,"dart-async":3,"flutter-basics":4,"flutter-ui":5,"adaptive":4,"git":2,"architecture":5,"docs-logging":2,"sprint1":6,"sprint2":6,"sprint3":6,"sprint4":7,"sprint5":4,"sprint6":4,"points":2,"task-explained":2,"glossary":1,"cheatsheet":1,"mistakes":2}
 
 def parse(path):
     raw = path.read_text(encoding="utf-8")
@@ -32,7 +32,13 @@ for f in sorted((root / "content").glob("*.md")):
     parts.append({"id": meta["id"], "stage": int(meta["stage"]), "title": meta["title"], "lead": meta["lead"],
                   "html": out, "text": text, "hours": HOURS[meta["id"]], "minutes": max(3, round(len(text.split()) / 160))})
 
-data = {"parts": parts, "quiz": json.loads((root / "src/quiz.json").read_text(encoding="utf-8")),
+quiz = json.loads((root / "src/quiz_all.json").read_text(encoding="utf-8"))
+counters = {}
+for q in quiz:
+    counters[q["part"]] = counters.get(q["part"], 0) + 1
+    q["id"] = "%s-%d" % (q["part"], counters[q["part"]])
+    assert q["part"] in {p["id"] for p in parts}, q["part"]
+data = {"parts": parts, "quiz": quiz, "users": json.loads((root / "src/users.json").read_text(encoding="utf-8")),
         "stages": [{"n": n, "title": t, "goal": g, "practice": p} for n, t, g, p in STAGES]}
 blob = json.dumps(data, ensure_ascii=False).replace("<", "\\u003c").replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
 tpl = (root / "src/template.html").read_text(encoding="utf-8")

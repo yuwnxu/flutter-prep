@@ -145,3 +145,131 @@ final path = r'C:\raw\no\escape';             // r — «сырая» строк
 - Читать `?`, `??`, `?.`, `!`.
 - Писать функции с именованными параметрами.
 - Работать со списками и словарями (`map`, `where`, `fold`).
+
+## Подробно: типы и их преобразования
+
+Часто нужно превратить один тип в другой: пользователь вводит число в поле, а там строка.
+
+```dart
+final s = '42';
+final a = int.parse(s);          // 42; но упадёт с FormatException на 'abc'
+final b = int.tryParse('abc');   // null — безопасный вариант
+final c = double.parse('3.5');
+final text = 42.toString();      // '42'
+final rounded = 3.7.round();     // 4
+final intFromDouble = 3.7.toInt(); // 3 (отбрасывает дробную часть)
+```
+
+Правило: **ввод пользователя всегда проверяйте** через `tryParse`, а не `parse`. Так приложение не упадёт из-за пустого поля.
+
+Различие `num`, `int` и `double`: `num` — общий родитель. JSON часто присылает число то как `5`, то как `5.0`, поэтому надёжнее разбирать так:
+
+```dart
+final score = (json['score'] as num?)?.toInt() ?? 0;
+```
+
+## Подробно: null safety на живом примере
+
+Допустим, пользователь заполняет форму регистрации. Поле «имя» необязательное.
+
+```dart
+class Profile {
+  final String email;     // обязательное: null нельзя
+  final String? name;     // необязательное: может быть null
+  Profile({required this.email, this.name});
+}
+
+String greeting(Profile p) {
+  // p.name может быть null, поэтому нужна защита:
+  final shown = p.name ?? p.email;     // если имени нет, показываем email
+  return 'Привет, $shown';
+}
+
+int nameLength(Profile p) => p.name?.length ?? 0;
+```
+
+Алгоритм выбора:
+
+1. Значение может отсутствовать? Делайте тип с `?`.
+2. Используете значение с `?`? Выберите: `??` (значение по умолчанию), `?.` (безопасный доступ) или `if (x != null)`.
+3. Пишете `!`? Остановитесь и подумайте: что будет, если там всё же `null`?
+
+**Промоция типа.** После проверки `if (name != null)` внутри блока Dart сам считает `name` ненулевым (но только для локальных переменных и `final`-полей текущего класса).
+
+```dart
+final String? name = getName();
+if (name != null) {
+  print(name.length); // здесь name — уже String
+}
+```
+
+## Подробно: коллекции на примере списка игр
+
+Списки и словари — рабочие инструменты для экранов Discover и Statistics.
+
+```dart
+class Game {
+  final String id; final String title; final DateTime startAt; final bool finished;
+  const Game(this.id, this.title, this.startAt, this.finished);
+}
+
+final games = <Game>[ /* ... пришли с сервера ... */ ];
+
+// Предстоящие игры, отсортированные по времени
+final upcoming = games.where((g) => g.startAt.isAfter(DateTime.now())).toList()
+  ..sort((a, b) => a.startAt.compareTo(b.startAt));
+
+// Количество созданных игр на этой неделе
+final monday = DateTime.now().subtract(Duration(days: DateTime.now().weekday - 1));
+final thisWeek = games.where((g) => g.startAt.isAfter(monday)).length;
+
+// Сгруппировать по дням: Map<день, список игр>
+final byDay = <String, List<Game>>{};
+for (final g in games) {
+  final key = '${g.startAt.day}-${g.startAt.month}';
+  byDay.putIfAbsent(key, () => []).add(g);
+}
+
+// Есть ли хоть одна завершённая? Все ли завершены?
+final anyDone = games.any((g) => g.finished);
+final allDone = games.every((g) => g.finished);
+
+// Первая подходящая игра или null
+final next = games.where((g) => !g.finished).firstOrNull;
+```
+
+Шпаргалка по методам:
+
+| Метод | Что делает | Возвращает |
+|---|---|---|
+| `where` | Отфильтровать | `Iterable` (добавьте `.toList()`) |
+| `map` | Преобразовать каждый элемент | `Iterable` |
+| `fold` / `reduce` | Свернуть в одно значение | значение |
+| `sort` | Отсортировать на месте | `void` |
+| `any` / `every` | Хотя бы один / все подходят | `bool` |
+| `firstWhere` | Найти первый | элемент (или ошибка) |
+| `take(n)` / `skip(n)` | Взять / пропустить n | `Iterable` |
+| `contains` | Есть ли значение | `bool` |
+
+## Подробно: как читать сообщения компилятора
+
+Dart подсвечивает ошибки красным до запуска. Типичные:
+
+| Сообщение | Причина |
+|---|---|
+| `The name 'x' isn't defined` | Опечатка или забыт импорт |
+| `A value of type 'int?' can't be assigned to a variable of type 'int'` | Значение может быть `null`: обработайте |
+| `The argument type 'String' can't be assigned to the parameter type 'int'` | Передан не тот тип |
+| `Missing required argument` | Не указан параметр с `required` |
+| `Expected to find ';'` | Пропущена точка с запятой |
+| `Undefined class` | Нет импорта: наведите курсор и нажмите Alt+Enter (импортировать) |
+
+Читайте ошибки **снизу вверх по важности**: сначала исправьте первую красную, остальные часто исчезают сами.
+
+## Практика
+
+1. Напишите функцию `parseAge(String)`, которая возвращает `int?` и не падает на пустой строке.
+2. Из списка `[5, 3, 9, 1]` получите сумму, максимум и список чётных.
+3. Составьте `Map<String,int>` «ник → очки» и выведите лидера.
+4. Запишите функцию с именованными параметрами `createGame({required title, DateTime? startAt})`.
+5. Исправьте код: `String s = null;` двумя способами.

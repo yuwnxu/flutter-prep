@@ -314,3 +314,116 @@ void main() {
 - [ ] Каждый запрос логируется: INFO старт, DEBUG успех, ERROR сбой.
 - [ ] Тесты запускаются командой `flutter test` без сети.
 - [ ] Версия и тег `v1.0.0`.
+
+## Максимальный балл: критерий за критерием
+
+| Критерий (макс.) | Что сделать точно | Проверка |
+|---|---|---|
+| Создана библиотека (0,5) | Отдельный репозиторий и пакет `network_layer` | `flutter pub get` проходит, экспорт в `network_layer.dart` |
+| SOLID (1,0) | Интерфейс клиента, реализация отдельно, API-классы по областям, ошибки отдельно | Объясните каждую букву на своём коде |
+| DRY (0,5) | Конфиг, обработчик ошибок и базовые методы GET/POST в одном месте | Нет повторяющегося `try/catch` |
+| Нет интернета → ошибка (0,7) | `SocketException`/`ClientException` превращается в `NoInternetException` | Отключите сеть и вызовите любой запрос |
+| Ошибка сервера → ошибка (0,84) | Код вне 200–299 превращается в `ServerException(code, message)` | Тест с ответом 500 |
+| Каждый из 11 запросов (по 1,1) | Метод, DTO, правильный путь и тело | Проверьте по документации API |
+| Тест на каждый запрос (по 0,45) | `test(...)` с `MockClient`, проверка пути, метода, результата | `flutter test` зелёный |
+| Комментарии и логи | Шапки, описания методов, логи на каждый запрос | Скрипт-проверка |
+| Git | Ветка `sprint-2`, PR, merge, тег `v1.0.0` | Видно в репозитории |
+
+## Подробно: шаблон запроса «в три шага»
+
+Чтобы сделать 11 запросов быстро, у каждого одинаковая структура:
+
+**Шаг 1. DTO ответа и тела запроса.**
+
+```dart
+class LoginRequest {
+  final String email, password;
+  const LoginRequest(this.email, this.password);
+  Map<String, dynamic> toJson() => {'email': email, 'password': password};
+}
+
+class AuthResultDto {
+  final String token; final UserDto user;
+  const AuthResultDto(this.token, this.user);
+  factory AuthResultDto.fromJson(Map<String, dynamic> j) =>
+      AuthResultDto(j['token'] as String, UserDto.fromJson(j['user'] as Map<String, dynamic>));
+}
+```
+
+**Шаг 2. Метод в интерфейсе и реализации.**
+
+```dart
+Future<AuthResultDto> login(LoginRequest r) async =>
+    AuthResultDto.fromJson(await _client.post('/auth/login', body: r.toJson()));
+```
+
+**Шаг 3. Тест.**
+
+```dart
+test('login: успех', () async { /* MockClient → expect */ });
+```
+
+Одиннадцать запросов — одиннадцать повторений этого шаблона. Заранее составьте таблицу из документации:
+
+| Запрос | Метод | Путь | Тело | Ответ |
+|---|---|---|---|---|
+| Авторизация | POST | `/...` | email, password | token, user |
+| Регистрация | POST | | | |
+| Изменение профиля | PUT | | | |
+| Получение профиля | GET | | | |
+| Выход | POST/DELETE | | | |
+| Создание игры | POST | | | |
+| Список игр | GET | | | |
+| Информация об игре | GET | | | |
+| Подключение к игре | POST | | | |
+| Статистика игрока | GET | | | |
+| Сохранение результата | POST | | | |
+
+(Пути и поля узнаете из документации API на соревновании.)
+
+## Подробно: как тестировать ошибки
+
+Эксперт проверяет не только успех, но и ошибки. Для каждого запроса сделайте три теста:
+
+```dart
+group('GameApi.getGames', () {
+  test('успех: возвращает список', () async { /* 200 + JSON */ });
+  test('ошибка сервера: ServerException(500)', () async {
+    final api = _api(MockClient((_) async => http.Response('{"message":"boom"}', 500)));
+    expect(api.getGames(), throwsA(isA<ServerException>()
+        .having((e) => e.statusCode, 'statusCode', 500)));
+  });
+  test('нет интернета: NoInternetException', () async {
+    final api = _api(MockClient((_) async => throw http.ClientException('offline')));
+    expect(api.getGames(), throwsA(isA<NoInternetException>()));
+  });
+});
+
+GameApi _api(http.Client c) => GameApiImpl(HttpApiClient(const ApiConfig(baseUrl: 'https://t'), client: c));
+```
+
+Если тест-кейс в карточке требует проверить **тело запроса** (для POST), проверьте его:
+
+```dart
+final body = jsonDecode(request.body) as Map<String, dynamic>;
+expect(body['email'], 'a@b.ru');
+```
+
+и **заголовок авторизации**: `expect(request.headers['Authorization'], 'Bearer token');`.
+
+## Подробно: отдельная библиотека — что это значит технически
+
+1. **Свой репозиторий**: `git init`, свой удалённый репозиторий, свои ветки и теги.
+2. **Свой `pubspec.yaml`**: имя, версия, зависимости (`http`, `logger`).
+3. **Публичный API**: `lib/network_layer.dart` экспортирует только то, что нужно приложению (интерфейсы, DTO, ошибки, конфиг, реализация). Остальное в `src/`.
+4. **Подключение в приложение**: `git: url: ... ref: v1.0.0` либо `path: ../network_layer`.
+5. **Заменяемость**: приложение пишет `ApiClient client = HttpApiClient(config);` в одном месте (DI). Заменить на `DioApiClient` значит поменять **одну строку**.
+
+Проверка «заменяемости» — сделайте второй класс `FakeApiClient implements ApiClient`, возвращающий готовые данные, и подставьте его в тесте. Если приложение работает, архитектура правильная.
+
+## Репетиция спринта 2
+
+1. Возьмите любой открытый API с авторизацией и списками (например, `jsonplaceholder.typicode.com`).
+2. Сымитируйте 11 запросов (посты, пользователи, комментарии).
+3. Реализуйте за 70 минут вместе с тестами.
+4. В симуляции запишите, на каком запросе замедлились.

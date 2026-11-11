@@ -162,3 +162,122 @@ try {
 - Объяснить разницу `extends`, `implements`, `with`.
 - Спрятать реализацию в `_приватных` членах и `lib/src`.
 - Использовать `sealed` для состояний.
+
+## Подробно: зачем нужны классы
+
+Без классов данные игры — набор разрозненных переменных: `gameTitle`, `gameDate`, `gamePlayers`. Класс объединяет их в **одну сущность** и добавляет поведение.
+
+```dart
+class Game {
+  final String id;
+  final String title;
+  final DateTime startAt;
+  final List<String> playerIds;
+
+  const Game({required this.id, required this.title, required this.startAt, this.playerIds = const []});
+
+  // Поведение рядом с данными
+  bool get hasOpponent => playerIds.length >= 2;
+  bool get isUpcoming => startAt.isAfter(DateTime.now());
+}
+```
+
+Теперь вместо трёх проверок в разных экранах — `game.hasOpponent`. Если правило изменится, меняем в одном месте (**DRY**). Класс — это ещё и точка, куда вешают шапку-комментарий и где живёт **одна ответственность** (S).
+
+## Подробно: extends, implements или with — что выбрать
+
+Простое правило выбора:
+
+| Ситуация | Что использовать | Пример |
+|---|---|---|
+| «Это разновидность» с общим кодом | `extends` | `PrimaryButton extends BaseButton` |
+| Нужен только **контракт**, реализация разная | `implements` (интерфейс) | `HttpApiClient implements ApiClient` |
+| Нужно подмешать способность нескольким классам | `with` (миксин) | `with Loggable` |
+
+Почему интерфейсы важны для задания: **приложение зависит от `ApiClient`** (контракт), а не от `HttpApiClient`. Заменить реализацию можно без правок остального кода (D из SOLID).
+
+```dart
+abstract interface class GameRepository {
+  Future<List<Game>> getGames();
+}
+
+class RemoteGameRepository implements GameRepository { /* ходит на сервер */ }
+class FakeGameRepository implements GameRepository { /* возвращает тестовые данные */ }
+```
+
+Фейковую реализацию удобно использовать в тестах и пока нет сервера.
+
+## Подробно: неизменяемые объекты и copyWith
+
+Если поля `final`, объект нельзя изменить после создания. Это защищает от случайных ошибок: Flutter сразу видит, что состояние «новое», когда вы создаёте новый объект.
+
+```dart
+class GameState {
+  final int moves;
+  final bool finished;
+  const GameState({this.moves = 0, this.finished = false});
+
+  // Создаёт копию с заменой отдельных полей
+  GameState copyWith({int? moves, bool? finished}) =>
+      GameState(moves: moves ?? this.moves, finished: finished ?? this.finished);
+}
+
+var state = const GameState();
+state = state.copyWith(moves: state.moves + 1);
+```
+
+## Подробно: равенство, hashCode, toString
+
+По умолчанию два объекта с одинаковыми полями **не равны** (сравниваются адреса в памяти). Для сравнения по содержимому переопределяют `==` и `hashCode`.
+
+```dart
+class Point {
+  final int x, y;
+  const Point(this.x, this.y);
+
+  @override
+  bool operator ==(Object other) => other is Point && other.x == x && other.y == y;
+
+  @override
+  int get hashCode => Object.hash(x, y);
+
+  @override
+  String toString() => 'Point($x, $y)'; // удобно для логов
+}
+```
+
+Для игры Image это пригодится, когда сравниваете порядок плиток; а `toString` делает логи читаемыми (формат из задания: `[Тег]: Событие — Детали`).
+
+## Подробно: DTO и Entity — зачем два класса
+
+**DTO** (Data Transfer Object) повторяет формат сервера: поля называются как в JSON, типы могут быть «сырыми». **Entity** — удобная для приложения модель.
+
+```dart
+// data/dto/game_dto.dart — как пришло с сервера
+class GameDto {
+  final String id;
+  final String title;
+  final String startAt;        // строка ISO
+  GameDto({required this.id, required this.title, required this.startAt});
+  factory GameDto.fromJson(Map<String, dynamic> j) =>
+      GameDto(id: j['id'].toString(), title: j['title'] as String, startAt: j['start_at'] as String);
+}
+
+// domain/entities/game.dart — как нужно приложению
+class Game { final String id; final String title; final DateTime startAt; /* ... */ }
+
+// data/mappers/game_mapper.dart
+class GameMapper {
+  static Game toEntity(GameDto d) => Game(id: d.id, title: d.title, startAt: DateTime.parse(d.startAt).toLocal());
+}
+```
+
+Если сервер переименует поле, поменяется только DTO и маппер. Экраны и бизнес-логика останутся нетронутыми (требование «изменение в одном месте не ломает другие»).
+
+## Практика
+
+1. Напишите класс `Player` с `fromJson`, `toJson`, `copyWith`.
+2. Создайте `abstract interface class Timer` и две реализации.
+3. Напишите `enum GameCategory` с полем `title` и методом `fromString`.
+4. Сделайте `sealed class` состояния экрана с тремя вариантами и `switch` по нему.
+5. Объясните, чем DTO отличается от Entity, и приведите пример из своей симуляции.

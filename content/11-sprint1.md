@@ -425,3 +425,114 @@ class ButtonsPage extends StatelessWidget {
 - [ ] На узком (360 dp) и широком (430 dp) экране нет переполнений.
 - [ ] Шапка у каждого класса, описания публичных методов, логи с форматом `[Тег]: Событие — Детали`.
 - [ ] Карточки перенесены в «Готово к тестированию» с хэшами коммитов.
+
+## Максимальный балл: критерий за критерием
+
+Это таблица «что смотрит эксперт → что вам сделать → как проверить себя». Идите по ней сверху вниз.
+
+| Критерий (макс.) | Что сделать точно | Проверка перед сдачей |
+|---|---|---|
+| Библиотека UIKit в отдельном проекте (0,5) | Отдельный репозиторий, `pubspec.yaml` с именем `uikit` | Репозиторий открывается сам по себе, не внутри приложения |
+| DRY (0,5) | Цвета, стили, рамки, пункты меню — в одном месте | Нет двух одинаковых кусков кода |
+| Цвета (0,24) | Все цвета макета как константы с именами, **ни одного пропущенного** (−0,02 за каждый) | Сравнить палитру Figma с `colors.dart` по списку |
+| Типографика (0,32) | Все текстовые стили макета (размер, начертание, высота строки, межбуквенный интервал) | Каждый стиль есть в StoryBook с подписью |
+| Поле ввода (1,2) | Состояния: default, focused, filled, error, disabled; типы: обычное, пароль, поиск; всё как в макете | −0,15 за каждый отсутствующий элемент; нет в StoryBook — половина |
+| Select (0,9) + BottomSheet (0,3) | Тап по полю открывает панель снизу с вариантами, выбранное значение отображается | Работает кликом в StoryBook |
+| Кнопка (1,5) | Все варианты и состояния макета (primary, secondary, destructive; default, pressed, disabled, loading) | −0,1 за каждый отсутствующий |
+| Pagination (0,3) | Точки с активной, все состояния | Видно в StoryBook |
+| Карточка (1,5) | Все варианты и состояния макета | −0,3 за каждый отсутствующий |
+| Bottom Bar (0,8) | Все пункты, активный пункт, центральная кнопка | Видно в StoryBook |
+| Timer (0,6) | Отображение времени по макету, формат `мм:сс` | Показан в разных значениях |
+| Checkbox (0,8) | Выкл, вкл, отключён (с отметкой и без) | Нажимается |
+| Все компоненты адаптивны (1,2) | Ширина от родителя, нет жёстких размеров экрана | Открыть StoryBook на узком и широком эмуляторе |
+| Комментарии и логи | Шапка у каждого класса, описания методов, логи `[Тег]: Событие — Детали` | Скрипт из раздела «Комментарии и логи» |
+| Git (0,3) | Ветка `sprint-1`, проект сохранён, PR смёржен | Ветка и PR видны в репозитории |
+
+::: warn
+**Три «множителя» ×0,5:** нет компонента в StoryBook, нет комментариев и логов, нет библиотеки. Проверьте их в первую очередь.
+:::
+
+## Подробно: как организовать StoryBook
+
+Эксперт открывает StoryBook на телефоне и должен быстро найти каждый компонент.
+
+1. **Главная страница** — список разделов: «Цвета», «Типографика», «Кнопки», «Поля», «Select», «Checkbox», «Pagination», «Карточки», «Bottom Bar», «Timer».
+2. **Страница раздела** — заголовок и все состояния друг под другом, у каждого подпись («Primary / Disabled»).
+3. Интерактивность: Select открывает BottomSheet, Checkbox переключается, Timer запускается, Pagination листается кнопками.
+4. Один импорт `package:uikit/uikit.dart`.
+
+```dart
+class StoryBookHome extends StatelessWidget {
+  const StoryBookHome({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final sections = <(String, Widget)>[
+      ('Цвета', const ColorsPage()),
+      ('Типографика', const TypographyPage()),
+      ('Кнопки', const ButtonsPage()),
+      ('Поля ввода', const InputsPage()),
+      ('Select', const SelectPage()),
+      ('Checkbox', const CheckboxPage()),
+      ('Pagination', const PaginationPage()),
+      ('Карточки', const CardsPage()),
+      ('Bottom Bar', const BottomBarPage()),
+      ('Timer', const TimerPage()),
+    ];
+    return Scaffold(
+      appBar: AppBar(title: const Text('StoryBook')),
+      body: ListView(
+        children: [
+          for (final (title, page) in sections)
+            ListTile(
+              title: Text(title),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => page)),
+            ),
+        ],
+      ),
+    );
+  }
+}
+```
+
+Для обёртки раздела сделайте один общий виджет `StorySection(title, children)`, чтобы не дублировать оформление (DRY).
+
+## Подробно: Timer как компонент
+
+В задании Timer — компонент интерфейса: плашка с временем. Продумайте: что он **отображает**, а что **считает**.
+
+```dart
+// Отображение таймера (без собственной логики отсчёта: SRP)
+class UiTimer extends StatelessWidget {
+  final Duration time;
+  const UiTimer({super.key, required this.time});
+
+  @override
+  Widget build(BuildContext context) {
+    final m = time.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = time.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(color: UiColors.surface, borderRadius: BorderRadius.circular(8)),
+      child: Text('$m:$s', style: subheader.copyWith(fontFeatures: const [FontFeature.tabularFigures()])),
+    );
+  }
+}
+```
+
+В StoryBook покажите его с живым отсчётом (`Timer.periodic` в `StatefulWidget` страницы) и с разными значениями (00:00, 01:30, 59:59).
+
+## Подробно: как не потерять баллы на мелочах
+
+- **Названия** цветов и стилей совпадают с макетом: `primary`, `secondary`, `screenHeader`.
+- **Состояние disabled** должно быть видно визуально (прозрачность) и не реагировать на нажатие.
+- **Нажатие** в StoryBook логируется (`AppLog.info`): так эксперт увидит логи в консоли.
+- **Пакеты**: в `pubspec.yaml` UIKit только то, что реально нужно.
+- **README** библиотеки: 5–7 строк про компоненты и пример подключения.
+- **CHANGELOG**: `## 1.0.0` и список компонентов.
+- **Тег** `v1.0.0` после merge.
+
+## Репетиция спринта 1
+
+Выполните за 90 минут с секундомером во вкладке «Симуляция». Для каждого компонента заведите заметку, если что-то не получилось, и в конце оцените результат по таблице выше.

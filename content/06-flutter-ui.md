@@ -218,3 +218,145 @@ Image.asset('assets/eye.png', package: 'uikit');
 - Собрать форму с валидацией и показом пароля.
 - Выбрать нужный способ навигации.
 - Открыть BottomSheet и системные пикеры даты и времени.
+
+## Подробно: форма регистрации по шагам
+
+Задача из спринта 3: экран «Регистрация» с проверкой email, показом пароля, ошибкой и прокруткой.
+
+1. **Каркас:** `Scaffold` → `SafeArea` → прокручиваемая область.
+2. **Закреплённый заголовок:** `CustomScrollView` с `SliverAppBar(pinned: true)`.
+3. **Картинка** сверху: `SliverToBoxAdapter`.
+4. **Форма:** `Form` + `TextFormField` для email и пароля, кнопка.
+5. **Логика:** контроллеры, валидатор, `isLoading`, вызов регистрации.
+6. **Ошибки сети:** SnackBar на 5 секунд.
+7. **Логи:** нажатие кнопки (INFO), запрос (INFO/DEBUG/ERROR).
+
+```dart
+Future<void> _submit() async {
+  AppLog.info('RegisterScreen', 'Нажатие', 'Кнопка «Create Account»');
+  if (!_formKey.currentState!.validate()) return;     // показали ошибки валидации
+  setState(() => _loading = true);
+  try {
+    await controller.register(_email.text.trim(), _password.text);
+    if (!mounted) return;
+    Navigator.of(context).pushReplacementNamed('/landing');
+  } on ApiException catch (e) {
+    if (mounted) showError(context, e.message);
+  } finally {
+    if (mounted) setState(() => _loading = false);
+  }
+}
+```
+
+Эксперту важно увидеть: ошибку при некорректном email, кнопку, которая блокируется во время запроса, и то, что при маленькой высоте экрана форма прокручивается, а заголовок остаётся.
+
+## Подробно: как устроена навигация
+
+**Navigator** хранит **стек** экранов, как стопку бумаг.
+
+- `push` кладёт новый экран сверху: пользователь может вернуться.
+- `pop` убирает верхний экран.
+- `pushReplacement` заменяет верхний (после Splash возвращаться некуда).
+- `pushAndRemoveUntil(..., (r) => false)` очищает весь стек и кладёт один экран (после Success открыть Landing, а назад чтобы нельзя).
+
+Передача данных:
+
+```dart
+// вперёд: через конструктор
+Navigator.push(context, MaterialPageRoute(builder: (_) => CombatInfoScreen(gameId: game.id)));
+
+// назад: результат pop
+final picked = await Navigator.push<String>(context, MaterialPageRoute(builder: (_) => const PickerScreen()));
+```
+
+**Именованные маршруты** с аргументами удобны для сохранения последнего экрана:
+
+```dart
+Navigator.pushNamed(context, '/combat', arguments: game.id);
+// в onGenerateRoute читаем settings.arguments
+```
+
+Кнопка «назад» на Android: `PopScope` перехватывает её, например, в игре.
+
+```dart
+PopScope(
+  canPop: false,
+  onPopInvokedWithResult: (didPop, _) { if (!didPop) _confirmExit(); },
+  child: ...,
+)
+```
+
+## Подробно: ресурсы и шрифты — где ошибаются
+
+Чек-лист «картинка/шрифт не отображается»:
+
+1. Файл лежит в папке, указанной в `pubspec.yaml` (`assets:`). Для папки пишут `assets/images/` (со слэшем на конце).
+2. Отступы в `pubspec.yaml` точные, без табуляции.
+3. После изменения выполнен `flutter pub get` и **полный перезапуск** приложения.
+4. Имя файла в коде совпадает с настоящим, **включая регистр** и расширение.
+5. Для файлов внутри пакета указан `package: 'имя_пакета'`.
+6. Шрифт: у каждого начертания `weight` и файл соответствуют друг другу.
+7. В `TextStyle` указан `fontFamily` (или шрифт задан в теме).
+
+Иконки в формате SVG во Flutter по умолчанию не поддерживаются, нужен пакет `flutter_svg`. Если пакета нет в списке разрешённых, экспортируйте иконки из Figma в PNG (@2x и @3x) или используйте `Icons.*`.
+
+## Подробно: списки и прокрутка
+
+| Задача | Виджет |
+|---|---|
+| Небольшая страница, которая может не поместиться | `SingleChildScrollView(child: Column(...))` |
+| Длинный список одинаковых элементов | `ListView.builder(itemCount: n, itemBuilder: ...)` |
+| Сетка карточек | `GridView.count` / `GridView.builder` |
+| Список + закреплённый заголовок + разные блоки | `CustomScrollView` + `Sliver*` |
+| Горизонтальная прокрутка | `ListView(scrollDirection: Axis.horizontal)` |
+
+`ListView.builder` создаёт элементы лениво (только видимые), поэтому быстрый и экономит память. Для экрана Discover Combats используйте именно его. Для пустого списка добавьте отдельное состояние («Игр пока нет»).
+
+```dart
+ListView.separated(
+  padding: const EdgeInsets.symmetric(horizontal: 20),
+  itemCount: games.length,
+  separatorBuilder: (_, __) => const SizedBox(height: 12),
+  itemBuilder: (_, i) => GameCard(game: games[i], onTap: () => open(games[i])),
+)
+```
+
+## Подробно: анимации для меню и переходов
+
+Для задания достаточно простых **неявных анимаций**: меняете значение, Flutter плавно анимирует.
+
+```dart
+AnimatedContainer(
+  duration: const Duration(milliseconds: 250),
+  curve: Curves.easeOut,
+  width: selected ? 24 : 8,
+  decoration: BoxDecoration(color: selected ? green : grey, borderRadius: BorderRadius.circular(4)),
+)
+
+AnimatedSlide(
+  offset: open ? Offset.zero : const Offset(-1, 0),   // -1 = целиком за левым краем
+  duration: const Duration(milliseconds: 250),
+  child: const MenuPanel(),
+)
+
+AnimatedOpacity(opacity: visible ? 1 : 0, duration: const Duration(milliseconds: 200), child: widget)
+```
+
+Для меню слева с закрытием по свайпу:
+
+```dart
+GestureDetector(
+  onHorizontalDragEnd: (d) { if ((d.primaryVelocity ?? 0) < 0) closeMenu(); }, // свайп влево
+  child: ...,
+)
+```
+
+Но проще и надёжнее стандартный `Drawer` (он уже умеет анимацию и свайп).
+
+## Практика
+
+1. Соберите форму входа: два поля, показ пароля, кнопка, ошибка, SnackBar.
+2. Откройте экран, передайте в него `id`, верните результат назад.
+3. Сделайте экран со списком из 50 элементов на `ListView.builder` с состоянием «пусто».
+4. Подключите свой шрифт и проверьте разные начертания.
+5. Сделайте индикатор страниц `UiPagination` с `AnimatedContainer`.

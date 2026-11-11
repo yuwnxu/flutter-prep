@@ -1,15 +1,24 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#00d95f">
 <title>Flutter к Профессионалам</title>
-<meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
 <style>
 /*STYLE*/
 </style>
+</head>
+<body>
+<div class="login" id="login" hidden></div>
 <div class="app">
   <header class="topbar">
     <button class="icon-btn" id="menuBtn" type="button" aria-label="Меню" aria-expanded="false" aria-controls="side"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
     <div class="brand">Flutter к Профессионалам</div>
+    <button class="mini-timer" id="miniTimer" type="button" hidden aria-label="Таймер симуляции">00:00:00</button>
     <span class="mini-progress" id="miniProgress">0%</span>
   </header>
   <aside class="side" id="side" aria-label="Содержание">
@@ -26,3 +35,5 @@
 <script>
 /*APP*/
 </script>
+</body>
+</html>

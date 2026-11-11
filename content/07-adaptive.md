@@ -96,3 +96,82 @@ class Scale {
 - Объяснить разницу между фиксированным и адаптивным размером.
 - Использовать `LayoutBuilder`, `MediaQuery`, `AspectRatio`, `Expanded`.
 - Снять размеры из Figma и перевести стили текста в `TextStyle`.
+
+## Подробно: из Figma в код — таблица соответствия
+
+| В Figma | Во Flutter |
+|---|---|
+| Frame (кадр) | `Container` / `SizedBox` / `Scaffold` |
+| Auto layout, вертикальный | `Column` |
+| Auto layout, горизонтальный | `Row` |
+| Gap (расстояние между элементами) | `Column(spacing: n)` или `SizedBox(height: n)` |
+| Padding | `Padding(padding: EdgeInsets...)` |
+| Fill container (растянуть) | `Expanded` или `double.infinity` |
+| Hug contents (по содержимому) | `mainAxisSize: MainAxisSize.min`, без фиксированного размера |
+| Fixed width/height | `SizedBox(width:, height:)` |
+| Corner radius | `BorderRadius.circular(r)` |
+| Stroke | `Border.all(color:, width:)` |
+| Drop shadow | `BoxShadow(color:, blurRadius:, offset:)` |
+| Text style | `TextStyle(fontSize, fontWeight, height = lineHeight/fontSize, letterSpacing)` |
+| Constraints (pin left/right) | `Positioned`, `Align`, `Stack` |
+| Component variants | Параметры или enum в виджете |
+
+Разница между Fixed, Hug и Fill — основа адаптивности: **Fixed** не меняется на разных экранах, **Hug** подстраивается под содержимое, **Fill** растягивается. Смотрите, какой режим выбрал дизайнер, и повторяйте.
+
+## Подробно: разбор карточки игры
+
+Допустим, в макете карточка шириной 350 (экран 390), внутри слева аватар 48×48, в центре название и время, справа статус.
+
+Как собрать:
+
+```dart
+Container(
+  width: double.infinity,                 // Fill: на любом экране занимает всю ширину
+  padding: const EdgeInsets.all(16),      // фиксированные отступы из макета
+  decoration: BoxDecoration(
+    color: Colors.white,
+    borderRadius: BorderRadius.circular(12),
+    border: Border.all(color: border),
+  ),
+  child: Row(
+    children: [
+      SizedBox(
+        width: 48,
+        child: AspectRatio(aspectRatio: 1, child: ClipOval(child: avatar)), // не искажается
+      ),
+      const SizedBox(width: 12),
+      Expanded(                            // середина тянется
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: subheader),
+            Text(time, style: bodySmall),
+          ],
+        ),
+      ),
+      const SizedBox(width: 12),
+      StatusChip(status: status),          // справа фиксированный по содержимому
+    ],
+  ),
+)
+```
+
+Порядок рассуждения: что должно тянуться? (середина, Expanded) Что фиксировано? (аватар, статус) Что делать с длинным текстом? (многоточие). Карточка всегда на всю ширину, значит нет «пустоты» на широких экранах.
+
+## Подробно: как проверять адаптивность
+
+1. Создайте **минимум три эмулятора** разного размера (маленький 360×640, обычный 390×844, большой/планшет).
+2. Пройдите все экраны на самом маленьком: ищите жёлто-чёрные полосы overflow.
+3. Пройдите на самом большом: ищите узкие «колонки» с пустыми полями по бокам.
+4. Включите **большой шрифт** в настройках Android: текст не должен ломать вёрстку.
+5. Откройте клавиатуру в полях ввода: кнопки и поля не должны перекрываться; форма должна прокручиваться.
+6. Сравните скриншот со скриншотом макета: отступы, радиусы, цвета, шрифты.
+
+В Android Studio можно менять размер окна эмулятора и плотность. Для быстрой проверки используйте `MediaQuery.sizeOf(context)` в логе: `AppLog.debug('Screen', 'Размер', '${size.width}x${size.height}')`.
+
+## Практика
+
+1. Соберите по макету любую карточку и проверьте на трёх эмуляторах.
+2. Сделайте вариант, где при узком экране карточки идут в одну колонку, а при широком в две (`LayoutBuilder`).
+3. Составьте для своего UIKit таблицу «компонент → какие размеры фиксированы, какие тянутся».
+4. Проверьте экран входа с клавиатурой и большим шрифтом.
