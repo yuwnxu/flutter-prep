@@ -53,10 +53,93 @@
   var user = null; // имя пользователя
   function uk(k) { return 'fp:' + user + ':' + k; }
   function ud(k, def) { try { var v = lsGet(uk(k)); return v ? JSON.parse(v) : def; } catch (e) { return def; } }
-  function us(k, v) { lsSet(uk(k), JSON.stringify(v)); }
+  function us(k, v) { lsSet(uk(k), JSON.stringify(v)); markDirty(); }
   function role() { return user && USERS[user] ? USERS[user].role : null; }
   function doneMap() { return ud('done', {}); }
   function percent() { var d = doneMap(); return Math.round(PARTS.filter(function (p) { return d[p.id]; }).length / PARTS.length * 100); }
+
+  /* =============== онлайн-синхронизация (Supabase, чистый REST) =============== */
+  var SB = DATA.config || {}, EMAIL_DOMAIN = '@flutter-prep.app';
+  function online() { return !!(SB.url && SB.anonKey); }
+  var auth = null; // { access_token, refresh_token, expires_at, id, username }
+  var syncStatus = 'idle', pushTimer = null, pushing = false, lastPull = 0;
+  function saveAuth() { if (auth) lsSet('fp_auth', JSON.stringify(auth)); else lsDel('fp_auth'); }
+  function setStatus(st) {
+    syncStatus = st;
+    var el = $('syncState'); if (!el) return;
+    var map = { idle: ['', ''], saving: ['Сохраняю…', 'busy'], ok: ['Сохранено в облаке', 'ok'], offline: ['Нет связи, сохранено на устройстве', 'bad'], local: ['Локальный режим', ''] };
+    el.textContent = map[st][0]; el.className = 'sync ' + map[st][1];
+  }
+  function sbReq(method, path, body, token, extra) {
+    var headers = { apikey: SB.anonKey, Authorization: 'Bearer ' + (token || SB.anonKey), 'Content-Type': 'application/json' };
+    if (extra) Object.keys(extra).forEach(function (k) { headers[k] = extra[k]; });
+    return fetch(SB.url.replace(/\/+$/, '') + path, { method: method, headers: headers, body: body ? JSON.stringify(body) : undefined }).then(function (r) {
+      return r.text().then(function (t) { var j = null; try { j = t ? JSON.parse(t) : null; } catch (e) { /* не JSON */ } if (!r.ok) { var err = new Error((j && (j.msg || j.error_description || j.message)) || ('HTTP ' + r.status)); err.status = r.status; throw err; } return j; });
+    });
+  }
+  function applyTokens(j, username) {
+    auth = { access_token: j.access_token, refresh_token: j.refresh_token, expires_at: Date.now() + (j.expires_in || 3600) * 1000, id: j.user && j.user.id || (auth && auth.id), username: username || (auth && auth.username) };
+    saveAuth();
+  }
+  function signIn(username, password) {
+    return sbReq('POST', '/auth/v1/token?grant_type=password', { email: username + EMAIL_DOMAIN, password: password }).then(function (j) { applyTokens(j, username); });
+  }
+  function getToken() {
+    if (!auth) return Promise.reject(new Error('no auth'));
+    if (auth.expires_at - 60000 > Date.now()) return Promise.resolve(auth.access_token);
+    return sbReq('POST', '/auth/v1/token?grant_type=refresh_token', { refresh_token: auth.refresh_token }).then(function (j) { applyTokens(j); return auth.access_token; });
+  }
+  function blob() {
+    var out = exportData().data, live = simState();
+    out.simcur = live || null;
+    return out;
+  }
+  function markDirty() {
+    if (!online() || !auth || !user) return;
+    lsSet(uk('dirty'), '1');
+    clearTimeout(pushTimer); pushTimer = setTimeout(push, 1500); setStatus('saving');
+  }
+  function push() {
+    if (!online() || !auth || pushing) { if (pushing) { clearTimeout(pushTimer); pushTimer = setTimeout(push, 1500); } return Promise.resolve(); }
+    pushing = true;
+    var now = new Date().toISOString();
+    return getToken().then(function (t) {
+      return sbReq('POST', '/rest/v1/user_data?on_conflict=user_id', { user_id: auth.id, username: user, data: blob(), updated_at: now }, t, { Prefer: 'resolution=merge-duplicates,return=minimal' });
+    }).then(function () { lsSet(uk('syncedAt'), now); lsDel(uk('dirty')); setStatus('ok'); }, function (e) {
+      setStatus('offline'); clearTimeout(pushTimer); pushTimer = setTimeout(push, 15000);
+      if (e && e.status === 401) { /* сессия истекла: при следующем запуске потребуется вход */ }
+    }).then(function () { pushing = false; });
+  }
+  function mergeInto(remote) {
+    // у устройства есть несохранённые правки: они главнее, но симуляции объединяем, а лучший результат теста берём максимальный
+    var local = blob(), out = local;
+    var ids = {}; (local.sims || []).forEach(function (x) { ids[x.id] = 1; });
+    (remote.sims || []).forEach(function (x) { if (!ids[x.id]) (out.sims = out.sims || []).push(x); });
+    if (out.sims) out.sims.sort(function (a, b) { return a.date - b.date; });
+    var q = out.quiz || {}; Object.keys(remote.quiz || {}).forEach(function (k) { if (!q[k] || remote.quiz[k].best > q[k].best) q[k] = remote.quiz[k]; }); out.quiz = q;
+    return out;
+  }
+  function applyBlob(data) {
+    Object.keys(data).forEach(function (k) { if (k === 'simcur') { if (data.simcur && !lsGet(uk('simcur'))) lsSet(uk('simcur'), JSON.stringify(data.simcur)); return; } lsSet(uk(k), JSON.stringify(data[k])); });
+  }
+  function pull() {
+    if (!online() || !auth) return Promise.resolve();
+    return getToken().then(function (t) { return sbReq('GET', '/rest/v1/user_data?user_id=eq.' + encodeURIComponent(auth.id) + '&select=data,updated_at', null, t); }).then(function (rows) {
+      lastPull = Date.now();
+      var dirty = !!lsGet(uk('dirty'));
+      if (!rows || !rows.length) { return push(); }
+      var r = rows[0], seen = lsGet(uk('syncedAt'));
+      if (dirty) { applyBlob(mergeInto(r.data || {})); return push(); }
+      if (!seen || r.updated_at > seen) applyBlob(r.data || {});
+      lsSet(uk('syncedAt'), r.updated_at); setStatus('ok');
+    }).catch(function (e) {
+      if (e && (e.status === 400 || e.status === 401) && /refresh|token|JWT|expired/i.test(e.message || '')) { auth = null; saveAuth(); user = null; showLogin('Сессия истекла, войдите снова'); return; }
+      setStatus('offline');
+    });
+  }
+  function listStudents() {
+    return getToken().then(function (t) { return sbReq('GET', '/rest/v1/user_data?select=username,data,updated_at&username=neq.' + encodeURIComponent(user) + '&order=updated_at.desc', null, t); });
+  }
 
   /* =============== вход =============== */
   var loginEl = $('login');
@@ -69,14 +152,25 @@
       '<div class="login-err" id="lerr" role="alert">' + esc(msg || '') + '</div><button class="cta green" type="submit">Войти</button></form>';
     $('loginForm').addEventListener('submit', function (e) {
       e.preventDefault();
-      var u = $('lu').value.trim().toLowerCase(), p = $('lp').value;
-      var rec = USERS[u];
-      if (rec && sha256('fp1:' + u + ':' + p) === rec.hash) { lsSet('fp_session', u); startApp(u); }
+      var u = $('lu').value.trim().toLowerCase(), p = $('lp').value, rec = USERS[u], btn = loginEl.querySelector('button[type=submit]');
+      if (online()) {
+        if (!rec) { $('lerr').textContent = 'Неверный логин или пароль'; return; }
+        btn.disabled = true; btn.textContent = 'Вхожу…';
+        signIn(u, p).then(function () { startApp(u); }, function (err) {
+          btn.disabled = false; btn.textContent = 'Войти';
+          $('lerr').textContent = err && err.status === 400 ? 'Неверный логин или пароль' : 'Не удалось войти: проверьте интернет и попробуйте снова';
+        });
+        return;
+      }
+      if (rec && rec.hash && sha256('fp1:' + u + ':' + p) === rec.hash) { lsSet('fp_session', u); startApp(u); }
       else $('lerr').textContent = 'Неверный логин или пароль';
     });
     setTimeout(function () { var f = $('lu'); if (f) f.focus(); }, 50);
   }
-  function logout() { stopTicker(); lsDel('fp_session'); user = null; showLogin(); }
+  function logout() {
+    var done = function () { stopTicker(); lsDel('fp_session'); auth = null; saveAuth(); user = null; showLogin(); };
+    if (online() && auth && lsGet(uk('dirty'))) { push().then(done); } else done();
+  }
 
   /* =============== боковое меню =============== */
   function renderNav(current) {
@@ -94,9 +188,10 @@
     [['simulation', 'Симуляция'], ['quiz', 'Тренажёр'], ['profile', 'Профиль и данные']].concat(role() === 'mentor' ? [['student', 'Данные студента']] : []).forEach(function (it) {
       h += '<a class="nav-item" href="#' + it[0] + '"' + (current === it[0] ? ' aria-current="page"' : '') + '><span class="dot tool"></span><span>' + it[1] + '</span></a>';
     });
-    h += '<div class="side-user"><span>' + esc(USERS[user].name) + ' · ' + esc(user) + '</span><button type="button" class="linkbtn" id="logoutBtn">Выйти</button></div>';
+    h += '<div class="side-user"><span>' + esc(USERS[user].name) + ' · ' + esc(user) + '</span><button type="button" class="linkbtn" id="logoutBtn">Выйти</button><span id="syncState" class="sync"></span></div>';
     navEl.innerHTML = h;
     $('logoutBtn').addEventListener('click', logout);
+    setStatus(online() ? syncStatus : 'local');
     $('miniProgress').textContent = percent() + '%';
   }
   function openSide(v) { side.classList.toggle('open', v); scrim.classList.toggle('show', v); $('menuBtn').setAttribute('aria-expanded', String(v)); }
@@ -476,7 +571,8 @@
     var h = '<div class="col"><div class="crumb">Инструменты</div><h1 class="h1s">Профиль и данные</h1><p class="lead">Вы вошли как <b>' + esc(USERS[user].name) + '</b> (' + esc(user) + ', ' + (isM ? 'наставник' : 'студент') + ').</p>';
     h += '<section class="block"><h2 class="blk">Дата чемпионата</h2><label for="exam">Когда региональный этап?</label><input id="exam" type="date" value="' + esc(st.exam || '') + '"><div class="muted small" id="examInfo"></div></section>';
     h += '<section class="block"><h2 class="blk">Резервная копия</h2><p class="muted">Прогресс хранится в браузере на этом устройстве. Чтобы перенести его на другое устройство или показать наставнику, сохраните файл.</p><div class="row"><button class="cta green" type="button" id="exBtn">Скачать файл с данными</button><button class="cta" type="button" id="exCopy">Скопировать как текст</button></div><div class="muted small" id="exInfo"></div></section>';
-    h += '<section class="block"><h2 class="blk">' + (isM ? 'Загрузить данные студента' : 'Восстановить из файла') + '</h2><p class="muted">' + (isM ? 'Выберите файл, который прислала студентка. Данные появятся на странице «Данные студента», ваш прогресс не изменится.' : 'Данные из файла заменят текущие на этом устройстве.') + '</p><label for="imFile">Файл .json</label><input id="imFile" type="file" accept="application/json,.json"><label for="imText">или вставьте текст</label><textarea id="imText" rows="3" placeholder="Вставьте содержимое файла"></textarea><div class="row"><button class="cta green" type="button" id="imBtn">' + (isM ? 'Загрузить' : 'Восстановить') + '</button></div><div class="muted small" id="imInfo" role="status"></div></section>';
+    if (!isM) h += '<section class="block"><h2 class="blk">Восстановить из файла</h2><p class="muted">Нужно только если вы хотите вернуть данные из скачанной копии. Данные из файла заменят текущие.</p><label for="imFile">Файл .json</label><input id="imFile" type="file" accept="application/json,.json"><label for="imText">или вставьте текст</label><textarea id="imText" rows="3" placeholder="Вставьте содержимое файла"></textarea><div class="row"><button class="cta green" type="button" id="imBtn">Восстановить</button></div><div class="muted small" id="imInfo" role="status"></div></section>';
+    h += '<section class="block"><h2 class="blk">Синхронизация</h2><p class="muted">' + (online() ? 'Данные автоматически сохраняются в облаке после каждого действия и подтягиваются при входе с любого устройства.' : 'Онлайн-режим не настроен: данные хранятся только в этом браузере.') + (isM ? ' Ваши страницы «Данные студента» обновляются сами.' : ' Наставник видит ваш прогресс онлайн.') + '</p><div class="row"><button class="cta" type="button" id="syncNow"' + (online() ? '' : ' disabled') + '>Синхронизировать сейчас</button></div></section>';
     h += '<section class="block"><h2 class="blk">Выход</h2><div class="row"><button class="cta" type="button" id="loPro">Выйти из аккаунта</button></div></section></div>';
     main.innerHTML = h;
     $('exam').addEventListener('change', function () { var s = ud('settings', {}); s.exam = $('exam').value; us('settings', s); var d = daysLeft(); $('examInfo').textContent = d === null ? '' : d >= 0 ? 'Осталось дней: ' + d : 'Дата уже прошла'; });
@@ -494,29 +590,48 @@
       var text = JSON.stringify(exportData());
       try { navigator.clipboard.writeText(text).then(function () { $('exInfo').textContent = 'Скопировано. Отправьте текст наставнику или вставьте на другом устройстве.'; }, function () { $('exInfo').textContent = 'Не удалось скопировать. Используйте скачивание файла.'; }); } catch (e) { $('exInfo').textContent = 'Не удалось скопировать. Используйте скачивание файла.'; }
     });
-    $('imFile').addEventListener('change', function () { var f = $('imFile').files[0]; if (!f) return; var r = new FileReader(); r.onload = function () { $('imText').value = String(r.result); }; r.readAsText(f); });
-    var armed = false;
-    $('imBtn').addEventListener('click', function () {
-      var info = $('imInfo'), o;
-      try { o = parseImport($('imText').value); } catch (e) { info.textContent = 'Не получилось прочитать данные: ' + e.message; return; }
-      if (isM) { us('student', { importedAt: Date.now(), from: o.user, exportedAt: o.exportedAt, data: o.data }); info.textContent = 'Данные загружены. Откройте «Данные студента».'; return; }
-      if (!armed) { armed = true; $('imBtn').textContent = 'Нажмите ещё раз: данные будут заменены'; return; }
-      Object.keys(o.data).forEach(function (k) { us(k, o.data[k]); });
-      armed = false; $('imBtn').textContent = 'Восстановить'; info.textContent = 'Готово. Данные восстановлены.'; renderNav('profile');
-    });
+    var sn = $('syncNow'); if (sn) sn.addEventListener('click', function () { setStatus('saving'); lsSet(uk('dirty'), '1'); push().then(function () { return pull(); }).then(function () { renderNav('profile'); }); });
+    if (!isM) {
+      $('imFile').addEventListener('change', function () { var f = $('imFile').files[0]; if (!f) return; var r = new FileReader(); r.onload = function () { $('imText').value = String(r.result); }; r.readAsText(f); });
+      var armed = false;
+      $('imBtn').addEventListener('click', function () {
+        var info = $('imInfo'), o;
+        try { o = parseImport($('imText').value); } catch (e) { info.textContent = 'Не получилось прочитать данные: ' + e.message; return; }
+        if (!armed) { armed = true; $('imBtn').textContent = 'Нажмите ещё раз: данные будут заменены'; return; }
+        Object.keys(o.data).forEach(function (k) { us(k, o.data[k]); });
+        armed = false; $('imBtn').textContent = 'Восстановить'; info.textContent = 'Готово. Данные восстановлены.'; renderNav('profile');
+      });
+    }
     $('loPro').addEventListener('click', logout);
   }
-  function renderStudent() {
-    var snap = ud('student', null);
-    var h = '<div class="col"><div class="crumb">Наставник</div><h1 class="h1s">Данные студента</h1>';
-    if (!snap) { main.innerHTML = h + '<p class="lead">Данные ещё не загружены. Попросите студентку скачать файл на странице «Профиль и данные» и загрузите его там же.</p><a class="cta green" href="#profile">Загрузить файл</a></div>'; return; }
-    var d = snap.data, done = d.done || {}, quiz = d.quiz || {}, sims = d.sims || [], notes = d.notes || {};
+  var studentTimer = null;
+  function studentHtml(row) {
+    var d = row.data || {}, done = d.done || {}, quiz = d.quiz || {}, sims = d.sims || [], notes = d.notes || {}, live = d.simcur;
     var cnt = PARTS.filter(function (p) { return done[p.id]; }).length;
-    h += '<p class="lead">Файл от ' + esc(snap.from || '—') + ', сформирован ' + fmtDate(snap.exportedAt) + ', загружен ' + fmtDate(snap.importedAt) + '.</p>';
+    var h = '<h2 class="sec" style="margin-top:8px">' + esc(row.username) + '</h2><p class="muted">Данные обновлены ' + fmtDate(Date.parse(row.updated_at)) + '. Страница обновляется сама каждые 15 секунд.</p>';
+    if (live) {
+      var rem = live.status === 'running' ? live.endAt - Date.now() : live.remaining;
+      h += '<section class="block live"><h2 class="blk">Сейчас идёт симуляция</h2><p><b>' + esc(live.title || 'Без названия') + '</b> · ' + (live.status === 'running' ? 'идёт, осталось ' + fmtDur(rem) : live.status === 'paused' ? 'на паузе, осталось ' + fmtDur(rem) : 'время вышло, ждёт оценки') + ' · заметок: ' + (live.notes || []).length + '</p>' + ((live.notes || []).length ? '<ul class="notes">' + live.notes.map(function (n) { return noteHtml(n, false); }).join('') + '</ul>' : '') + '</section>';
+    }
     h += '<div class="facts"><div class="fact"><b>' + Math.round(cnt / PARTS.length * 100) + '%</b><span>изучено (' + cnt + ' из ' + PARTS.length + ')</span></div><div class="fact"><b>' + Object.keys(quiz).length + '</b><span>тестов пройдено</span></div><div class="fact"><b>' + sims.length + '</b><span>симуляций</span></div><div class="fact"><b>' + ((d.settings && d.settings.exam) ? esc(d.settings.exam) : '—') + '</b><span>дата чемпионата</span></div></div>';
     h += '<h2 class="sec">Темы</h2><div class="tablewrap"><table class="plain"><thead><tr><th>Тема</th><th>Изучена</th><th>Тест</th><th>Заметка</th></tr></thead><tbody>' + PARTS.map(function (p) { var q = quiz[p.id]; return '<tr><td>' + esc(p.title) + '</td><td>' + (done[p.id] ? '✓' : '—') + '</td><td>' + (q ? q.best + '% (' + q.attempts + ')' : '—') + '</td><td>' + (notes[p.id] ? esc(notes[p.id]).slice(0, 160) : '') + '</td></tr>'; }).join('') + '</tbody></table></div>';
-    h += '<h2 class="sec">Симуляции</h2>' + historyHtml(sims, true) + '</div>';
-    main.innerHTML = h;
+    h += '<h2 class="sec">Симуляции</h2>' + historyHtml(sims, true);
+    return h;
+  }
+  function renderStudent() {
+    var head = '<div class="col"><div class="crumb">Наставник</div><h1 class="h1s">Данные студента</h1>';
+    if (!online()) { main.innerHTML = head + '<p class="lead">Онлайн-режим не настроен, поэтому данные студента недоступны.</p></div>'; return; }
+    main.innerHTML = head + '<div id="stuBody"><p class="muted">Загружаю…</p></div><div class="row"><button class="cta" type="button" id="stuRefresh">Обновить сейчас</button></div></div>';
+    function load() {
+      listStudents().then(function (rows) {
+        var el = $('stuBody'); if (!el) return;
+        var open = {}; el.querySelectorAll('details.simcard[open]').forEach(function (d) { open[d.querySelector('.sc-title').textContent] = 1; });
+        el.innerHTML = rows.length ? rows.map(studentHtml).join('') : '<p class="lead">Студент ещё ни разу не входил или не сохранил данные.</p>';
+        el.querySelectorAll('details.simcard').forEach(function (d) { if (open[d.querySelector('.sc-title').textContent]) d.open = true; });
+      }, function (e) { var el = $('stuBody'); if (el) el.innerHTML = '<p class="lead">Не удалось загрузить данные: ' + esc(e.message) + '</p>'; });
+    }
+    load(); $('stuRefresh').addEventListener('click', load);
+    clearInterval(studentTimer); studentTimer = setInterval(function () { if (location.hash === '#student') load(); else clearInterval(studentTimer); }, 15000);
   }
 
   /* =============== поиск =============== */
@@ -538,6 +653,7 @@
   /* =============== маршрутизация и запуск =============== */
   function route() {
     if (!user) return;
+    clearInterval(studentTimer);
     var id = location.hash.replace('#', '') || 'home', cur = id;
     if (id === 'home') renderHome();
     else if (id === 'quiz') renderQuizHub();
@@ -555,13 +671,27 @@
   function startApp(u) {
     user = u;
     document.body.classList.remove('locked'); loginEl.hidden = true; loginEl.innerHTML = '';
-    // перенос прогресса из версии без входа (один раз, только для студента)
     try {
       var old = lsGet('fp_done');
       if (old && role() === 'student' && !lsGet(uk('done'))) { lsSet(uk('done'), old); lsDel('fp_done'); }
     } catch (e) { /* ничего */ }
-    route(); ensureTicker();
+    var go = function () { route(); ensureTicker(); };
+    if (online() && auth) {
+      main.innerHTML = '<div class="col"><p class="muted">Загружаю данные из облака…</p></div>';
+      var timeout = new Promise(function (res) { setTimeout(res, 8000); });
+      Promise.race([pull(), timeout]).then(go, go);
+    } else go();
   }
-  var saved = lsGet('fp_session');
-  if (saved && USERS[saved]) startApp(saved); else showLogin();
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden || !user || !online() || !auth || lsGet(uk('dirty')) || Date.now() - lastPull < 20000) return;
+    pull().then(function () { if ((location.hash || '#home') === '#home') route(); });
+  });
+  var savedAuth = null;
+  if (online()) { try { savedAuth = JSON.parse(lsGet('fp_auth') || 'null'); } catch (e) { savedAuth = null; } }
+  if (online()) {
+    if (savedAuth && USERS[savedAuth.username]) { auth = savedAuth; startApp(savedAuth.username); } else showLogin();
+  } else {
+    var saved = lsGet('fp_session');
+    if (saved && USERS[saved]) startApp(saved); else showLogin();
+  }
 })();

@@ -268,3 +268,8 @@ table.plain th { background: var(--mint-2); }
 .facts.small .fact b { font-size: 17px; }
 .chartbox { border: 2px solid var(--line); border-radius: 16px; padding: 10px 12px; margin: 10px 0; }
 .chartbox svg { width: 100%; max-width: 420px; height: auto; display: block; }
+
+/* ===== синхронизация ===== */
+.sync { flex-basis: 100%; font-size: 12px; font-weight: 700; color: var(--muted); }
+.sync.ok { color: var(--green-ink); } .sync.bad { color: #b3261e; } .sync.busy { color: var(--muted); }
+.block.live { background: var(--mint); border-color: var(--green); }

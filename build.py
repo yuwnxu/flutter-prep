@@ -38,7 +38,14 @@ for q in quiz:
     counters[q["part"]] = counters.get(q["part"], 0) + 1
     q["id"] = "%s-%d" % (q["part"], counters[q["part"]])
     assert q["part"] in {p["id"] for p in parts}, q["part"]
-data = {"parts": parts, "quiz": quiz, "users": json.loads((root / "src/users.json").read_text(encoding="utf-8")),
+config = json.loads((root / "src/config.json").read_text(encoding="utf-8"))
+users = json.loads((root / "src/users.json").read_text(encoding="utf-8"))
+if config.get("url") and config.get("anonKey"):
+    # онлайн-режим: вход проверяет Supabase, хэши паролей на сайт не попадают
+    users = {k: {kk: vv for kk, vv in v.items() if kk != "hash"} for k, v in users.items()}
+else:
+    config = {}
+data = {"parts": parts, "quiz": quiz, "users": users, "config": config,
         "stages": [{"n": n, "title": t, "goal": g, "practice": p} for n, t, g, p in STAGES]}
 blob = json.dumps(data, ensure_ascii=False).replace("<", "\\u003c").replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
 tpl = (root / "src/template.html").read_text(encoding="utf-8")
