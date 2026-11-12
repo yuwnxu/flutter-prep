@@ -28,10 +28,10 @@ order(P, 1, "try/catch в запросе", [
     "}"],
     "Запрос выполняется в try, нужные ошибки ловятся через on/catch. Так сетевая ошибка превращается в понятное исключение для интерфейса.", intro="Соберите блок обработки ошибки в правильном порядке.")
 write(P, 1, "Загрузка с запасным значением", "Напишите функцию `Future<int> loadScore(Future<int> Function() request)`: вызывает `request`, а если произошла любая ошибка, возвращает 0. Используйте `async`, `await` и `try/catch`.",
-    "Future<int> loadScore(Future<int> Function() request) async {\n  // ваш код\n}\n",
+    "Future<int> loadScore(Future<int> Function() request) async {\n  // 1. попробовать выполнить запрос\n  // 2. вернуть результат запроса (не забудьте дождаться его)\n  // 3. если произошла ошибка, вернуть ноль\n}\n",
     [("есть async", r"\basync\b"), ("есть await", r"\bawait\b"), ("есть try", r"\btry\b"), ("есть catch", r"\bcatch\b|\bon\s+\w+"), ("есть return 0", r"return\s+0")],
     "Future<int> loadScore(Future<int> Function() request) async {\n  try {\n    return await request();\n  } catch (e) {\n    return 0;\n  }\n}",
-    ["Внутри try: return await request();", "В catch верните 0.", "Не забудьте async в заголовке."],
+    ["request — это функция. Чтобы получить число, её нужно вызвать со скобками: request().", "Дождитесь результата и сразу верните его: return await request();", "Обе эти строки должны лежать внутри try { ... }.", "После try добавьте catch (e) { return 0; }."],
     "Ошибки в async-коде ловятся обычным try/catch, как и в синхронном.")
 fill(P, 2, "Таймер", """
 Timer? _timer;
@@ -116,6 +116,42 @@ Future<void> main() async {
   print('B');
   print('C');
 }""", "A\nB\nC", "main сам async и сам ждёт. Печатается A, затем пауза в 1 секунду (await), потом B и C. Порядок на экране остаётся таким же, а вот если вызывать async-функцию без await, остальной код её не ждёт (следующее упражнение).", hint="Здесь никто не продолжает работать, пока main ждёт: main и есть тот, кто ждёт.", rank=0)
+
+predict(P, 1, "Ступенька 3: функция как параметр", """
+int apply(int Function() f) {
+  return f();
+}
+void main() {
+  print(apply(() => 7));
+  print(apply(() => 2 + 3));
+}""", "7\n5", "Параметр f — это функция. apply вызывает её (f()) и возвращает результат. Стрелка () => 7 создаёт маленькую функцию, которая возвращает 7. Именно так в loadScore передают request.", hint="apply просто вызывает переданную функцию и возвращает то, что она вернула.", rank=0)
+predict(P, 1, "Ступенька 4: try/catch без async", """
+int safeDiv(int a, int b) {
+  try {
+    return a ~/ b;     // целочисленное деление
+  } catch (e) {
+    return 0;
+  }
+}
+void main() {
+  print(safeDiv(10, 2));
+  print(safeDiv(5, 0));
+}""", "5\n0", "10 ~/ 2 = 5, а деление на ноль вызывает ошибку: её ловит catch и функция возвращает 0. Так же работает и в loadScore, только вместо деления там запрос.", hint="Деление на ноль приводит к ошибке, которую ловит catch.", rank=0)
+fill(P, 1, "Ступенька 5: каркас loadScore", """
+Future<int> loadScore(Future<int> Function() request) [[1]] {
+  [[2]] {
+    return [[3]] request();
+  } [[4]] (e) {
+    return 0;
+  }
+}""", [["async"], ["try"], ["await"], ["catch"]], "async — потому что внутри await; try — попробовать; await — дождаться результата, иначе catch не поймает ошибку; catch — вернуть 0, если что-то пошло не так.", hint="Слова: async, try, await, catch.", rank=0)
+order(P, 1, "Ступенька 6: тело loadScore по порядку", [
+    "try {",
+    "  return await request();",
+    "} catch (e) {",
+    "  return 0;",
+    "}"],
+    "Сначала пробуем (try), внутри вызываем request() с await, затем ловим ошибку (catch) и возвращаем 0.", intro="Соберите тело функции loadScore.", hint="Сначала try, затем return, затем catch.", rank=0)
 
 # ================= Flutter: виджеты и состояние =================
 P = "flutter-basics"
