@@ -390,7 +390,7 @@
     el.innerHTML = '<div class="skillmap" data-map></div><div data-skills></div>';
     var mapEl = el.querySelector('[data-map]'), wrap = el.querySelector('[data-skills]');
     skills.forEach(function (sk, i) {
-      var k = i + 1, items = list.filter(function (e) { return e.skill === k; });
+      var k = i + 1, items = list.filter(function (e) { return e.skill === k; }).sort(function (a, b) { return (a.rank == null ? 1 : a.rank) - (b.rank == null ? 1 : b.rank); });
       if (!items.length) return;
       var d = document.createElement('details'); d.className = 'skill'; d.dataset.k = k;
       d.innerHTML = '<summary><span class="sk-t">' + inline(sk) + '</span><span class="sk-p" data-p></span></summary><div class="sk-body"></div>';

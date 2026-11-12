@@ -14,9 +14,9 @@ def fill(part, skill, title, code, answers, why, hint=""):
     """code содержит пропуски [[1]], [[2]]...; answers: список списков допустимых ответов."""
     E.append(dict(id=_id(part), part=part, skill=skill, t="fill", title=title, code=code.strip("\n"), answers=answers, why=why, hint=hint))
 
-def predict(part, skill, title, code, answer, why, hint=""):
+def predict(part, skill, title, code, answer, why, hint="", rank=1):
     """Что выведет программа? answer: строка или список допустимых строк (строки разделены \\n)."""
-    E.append(dict(id=_id(part), part=part, skill=skill, t="predict", title=title, code=code.strip("\n"), answer=answer if isinstance(answer, list) else [answer], why=why, hint=hint))
+    E.append(dict(id=_id(part), part=part, skill=skill, t="predict", title=title, code=code.strip("\n"), answer=answer if isinstance(answer, list) else [answer], why=why, hint=hint, rank=rank))
 
 def bug(part, skill, title, code, line, why, hint=""):
     """Найдите строку с ошибкой (номер строки с 1)."""
