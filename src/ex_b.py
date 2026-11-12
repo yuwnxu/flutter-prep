@@ -59,10 +59,10 @@ class _TimerState extends State<TimerScreen> {
   }
 }""", [9, 10], "Строка 10: в dispose нет `_timer?.cancel();`. Таймер продолжит работать и вызовет setState у удалённого виджета.", hint="Что должно быть в dispose?")
 write(P, 2, "Секундомер", "Напишите класс `Stopwatch1` с полем `int seconds`, методами `start()` (запускает `Timer.periodic` раз в секунду и увеличивает `seconds`) и `stop()` (отменяет таймер).",
-    "import 'dart:async';\n\nclass Stopwatch1 {\n  // ваш код\n}\n",
+    "import 'dart:async';\n\nclass Stopwatch1 {\n  // поле: сколько секунд прошло (начинается с нуля)\n  // поле: «пульт» от таймера (его нужно хранить, чтобы потом остановить)\n\n  // метод start: запустить повтор раз в секунду, каждый раз прибавлять 1 к секундам\n\n  // метод stop: остановить повтор\n}\n",
     [("есть Timer.periodic", r"Timer\.periodic"), ("есть start", r"start\s*\("), ("есть stop", r"stop\s*\("), ("есть cancel", r"cancel\s*\("), ("увеличивается seconds", r"seconds\s*(\+\+|\+=)")],
     "import 'dart:async';\n\nclass Stopwatch1 {\n  int seconds = 0;\n  Timer? _timer;\n\n  void start() {\n    _timer = Timer.periodic(const Duration(seconds: 1), (_) => seconds++);\n  }\n\n  void stop() {\n    _timer?.cancel();\n    _timer = null;\n  }\n}",
-    ["Таймер хранится в поле Timer? _timer.", "В start: _timer = Timer.periodic(...).", "В stop: _timer?.cancel();"],
+    ["Нужны два поля: int seconds = 0; и Timer? _timer; (пульт от таймера).", "В start: _timer = Timer.periodic(const Duration(seconds: 1), (timer) { ... });", "Внутри фигурных скобок прибавьте единицу: seconds++;", "В stop: _timer?.cancel();"],
     "Каждый таймер, запущенный на экране, нужно остановить при уходе с него.")
 fill(P, 3, "Разбор JSON", """
 import 'dart:convert';
@@ -152,6 +152,37 @@ order(P, 1, "Ступенька 6: тело loadScore по порядку", [
     "  return 0;",
     "}"],
     "Сначала пробуем (try), внутри вызываем request() с await, затем ловим ошибку (catch) и возвращаем 0.", intro="Соберите тело функции loadScore.", hint="Сначала try, затем return, затем catch.", rank=0)
+
+predict(P, 2, "Ступенька 1: что делает обработчик таймера", """
+int seconds = 0;
+void tick() {
+  seconds++;
+}
+void main() {
+  tick();
+  tick();
+  tick();
+  print(seconds);
+}""", "3", "Таймер Timer.periodic просто вызывает такую функцию (tick) каждую секунду. Три срабатывания, то есть три прибавления единицы: seconds = 3.", hint="Сколько раз вызвана tick()?", rank=0)
+fill(P, 2, "Ступенька 2: запуск таймера", """
+_timer = Timer.[[1]](const Duration(seconds: [[2]]), (timer) {
+  seconds[[3]];
+});""", [["periodic"], ["1"], ["++"]], "Timer.periodic(как часто, что делать): раз в 1 секунду выполняется функция, которая прибавляет единицу.", hint="Первое слово: «периодический». Прибавить единицу — два плюса.", rank=0)
+fill(P, 2, "Ступенька 3: весь класс с пропусками", """
+class Stopwatch1 {
+  int seconds = [[1]];
+  Timer? [[2]];
+
+  void start() {
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      seconds++;
+    });
+  }
+
+  void stop() {
+    _timer?.[[3]]();
+  }
+}""", [["0"], ["_timer"], ["cancel"]], "Секунды начинаются с 0; таймер хранится в поле _timer (пульт); cancel выключает таймер.", hint="Нужно: ноль, имя поля с таймером, метод остановки.", rank=0)
 
 # ================= Flutter: виджеты и состояние =================
 P = "flutter-basics"
