@@ -175,3 +175,63 @@ Container(
 2. Сделайте вариант, где при узком экране карточки идут в одну колонку, а при широком в две (`LayoutBuilder`).
 3. Составьте для своего UIKit таблицу «компонент → какие размеры фиксированы, какие тянутся».
 4. Проверьте экран входа с клавиатурой и большим шрифтом.
+
+## Учимся: навык 1. Фиксированный и адаптивный размер
+
+**Вопрос к каждому элементу макета:** «Что должно происходить с этим при смене ширины экрана?»
+
+| Ответ | Режим Figma | Во Flutter | Примеры |
+|---|---|---|---|
+| Остаётся таким же | Fixed | `SizedBox(width: ...)` | Иконка 24×24, аватар 60×60, высота кнопки 48 |
+| Растягивается | Fill container | `Expanded` / `double.infinity` | Кнопка на всю ширину, поле ввода, карточка |
+| Подстраивается под содержимое | Hug contents | `mainAxisSize: min`, без размера | Бейдж со статусом, чип |
+| Должен сохранять пропорции | Fixed + соотношение | `AspectRatio` | Аватарка, превью картинки |
+
+**Типичная ошибка.** Поставить всем блокам размеры из макета (`width: 350`). На широком экране блок останется узкой «колонкой», на узком выйдет за границы. Для основных блоков используйте `double.infinity` и боковые отступы 16–24.
+
+## Учимся: навык 2. LayoutBuilder, MediaQuery, AspectRatio, Expanded
+
+| Инструмент | Какой вопрос решает | Пример |
+|---|---|---|
+| `MediaQuery.sizeOf(context)` | Какой размер у всего экрана? | `final w = MediaQuery.sizeOf(context).width;` |
+| `LayoutBuilder` | Сколько места дали **этому** блоку? | `builder: (c, box) => box.maxWidth < 360 ? ... : ...` |
+| `AspectRatio` | Как не исказить картинку? | `AspectRatio(aspectRatio: 1, child: ...)` |
+| `Expanded` / `Flexible` | Как занять остаток места? | В `Row`/`Column` |
+| `ConstrainedBox` | Как не растянуться слишком сильно? | `maxWidth: 480` |
+
+**Пример: список карточек, который на широком экране становится сеткой.**
+
+```dart
+LayoutBuilder(
+  builder: (context, box) {
+    final columns = box.maxWidth >= 600 ? 2 : 1;
+    return GridView.count(
+      crossAxisCount: columns,
+      childAspectRatio: 3,
+      children: games.map((g) => GameCard(g)).toList(),
+    );
+  },
+)
+```
+
+## Учимся: навык 3. Из Figma в TextStyle
+
+**Шаги:**
+1. Откройте макет в Figma, включите **Dev Mode**.
+2. Выделите текст. Справа найдите: **Font family, Weight, Size, Line height, Letter spacing**.
+3. Переведите в Flutter:
+
+| Figma | Flutter |
+|---|---|
+| Font: Manrope | `fontFamily: 'Manrope'` |
+| Weight: Bold / 700 | `fontWeight: FontWeight.w700` |
+| Size: 24 | `fontSize: 24` |
+| Line height: 32 | `height: 32 / 24` |
+| Letter spacing: −2% | `letterSpacing: -0.02 * 24` (= −0.48) |
+| Color | `color: Color(0xFF191B23)` |
+
+**Процент в Figma.** Если letter spacing задан в %, умножьте проценты на размер шрифта: −2% от 24 px = −0.48.
+
+4. Дайте стилю **имя из макета** (`screenHeader`, `bodyMedium`).
+5. Положите в одно место (`typography.dart`) и используйте везде.
+6. Сверьте на экране: наложите скриншот на макет.

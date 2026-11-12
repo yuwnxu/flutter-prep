@@ -215,3 +215,113 @@ class GameDto {
 3. Сделайте секундомер на `Timer.periodic` с кнопкой пауза.
 4. Разберите JSON из примера в модели и выведите имена игроков.
 5. Придумайте, как показать пользователю ошибку таймаута, и напишите соответствующий `catch`.
+
+## Учимся: навык 1. async, await и try/catch
+
+**Идея.** Долгая операция (запрос в сеть) не должна замораживать экран. `await` говорит: «подожди результат здесь, а приложение пока работает».
+
+**Три правила.**
+1. Есть `await` внутри? Пометьте функцию `async` и сделайте её тип `Future<...>`.
+2. Вызываете `async`-функцию и нужен результат? Ставьте `await`.
+3. Операция может завершиться ошибкой? Оберните вызов в `try/catch`.
+
+**Шаги на примере «загрузить список игр»:**
+
+```dart
+Future<List<Game>> loadGames() async {                // 1. async и Future
+  AppLog.info('GameController', 'Запрос', 'Список игр');
+  try {
+    final games = await repo.getGames();              // 2. await
+    AppLog.debug('GameController', 'Ответ', '${games.length}');
+    return games;
+  } on NoInternetException {                           // 3. ловим конкретную ошибку
+    AppLog.error('GameController', 'Ошибка', 'Нет сети');
+    rethrow;                                           // передаём выше: экран покажет SnackBar
+  } catch (e, st) {                                    // 3. все остальные
+    AppLog.error('GameController', 'Ошибка', '$e', e, st);
+    rethrow;
+  }
+}
+```
+
+**Частые ошибки:** забыли `await` (в переменной окажется `Future`, а не значение); `catch` без лога (теряете баллы); после `await` в виджете забыли проверить `mounted`.
+
+## Учимся: навык 2. Timer.periodic и остановка
+
+**Идея.** Таймер повторяет действие. Его нужно **запустить** и обязательно **остановить**.
+
+**Шаги:**
+1. Объявите поле `Timer? _timer;`.
+2. Запустите в `initState` или по кнопке: `_timer = Timer.periodic(Duration(seconds: 1), (_) { ... });`.
+3. Остановите в `dispose`: `_timer?.cancel();`.
+4. Если таймер должен останавливаться раньше (победа в игре), вызовите `cancel()` в этот момент.
+
+```dart
+class _GameState extends State<GameScreen> {
+  Timer? _timer;
+  int _seconds = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      setState(() => _seconds++);
+    });
+  }
+
+  void _onSolved() {
+    _timer?.cancel();            // остановили при победе
+    // отправка результата
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();            // и при уходе с экрана
+    super.dispose();
+  }
+}
+```
+
+**Что будет, если не остановить:** таймер продолжит работать после ухода с экрана, будет вызывать `setState` и приведёт к ошибке `setState() called after dispose()`, а в игре время будет идти уже не у вас.
+
+## Учимся: навык 3. Разбор JSON в модель и обратно
+
+**Алгоритм** для любого ответа сервера:
+1. Получили строку `body`.
+2. `jsonDecode(body)` превращает её в `Map` или `List`.
+3. Для каждой модели вызываем `fromJson`.
+4. Отправка в обратную сторону: `jsonEncode(model.toJson())`.
+
+```dart
+// ответ: {"id":"5","title":"Битва","players":[{"name":"Аня"},{"name":"Боря"}]}
+final map = jsonDecode(body) as Map<String, dynamic>;
+final game = GameDto.fromJson(map);
+
+// список игр: [ {...}, {...} ]
+final list = (jsonDecode(body) as List)
+    .map((e) => GameDto.fromJson(e as Map<String, dynamic>))
+    .toList();
+```
+
+**Как не ошибиться в `fromJson`:** сверяйте названия ключей с документацией (регистр важен: `start_at` и `startAt` разные ключи); вложенный список разбирайте через `map(...).toList()`; на каждое необязательное поле — `?` и `??`.
+
+## Учимся: навык 4. Разница между датами
+
+**Инструменты:**
+
+| Что нужно | Как |
+|---|---|
+| Сколько осталось до игры | `start.difference(now)` → `Duration` |
+| Минуты/часы/дни из Duration | `.inMinutes`, `.inHours`, `.inDays` |
+| Сдвинуть дату | `start.add(Duration(hours: 1))`, `start.subtract(...)` |
+| Раньше или позже | `a.isBefore(b)`, `a.isAfter(b)` |
+| Начало недели | `day.subtract(Duration(days: day.weekday - 1))` |
+
+```dart
+final start = DateTime(2027, 3, 15, 18, 30);
+final left = start.difference(DateTime.now());
+final text = left.isNegative ? 'уже началась' : 'через ${left.inMinutes} мин';
+final remindAt = start.subtract(const Duration(hours: 1));   // уведомление за час
+```
+
+**Ловушки:** все даты сравнивайте в одном часовом поясе (`toUtc()` или `toLocal()` у обеих); `inMinutes` отбрасывает остаток секунд; при отрицательной разнице игра уже началась.

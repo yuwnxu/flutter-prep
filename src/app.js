@@ -1,9 +1,10 @@
 (function () {
   'use strict';
   var DATA = JSON.parse(document.getElementById('data').textContent);
-  var PARTS = DATA.parts, STAGES = DATA.stages, QUIZ = DATA.quiz, USERS = DATA.users;
+  var PARTS = DATA.parts, STAGES = DATA.stages, QUIZ = DATA.quiz, USERS = DATA.users, EX = DATA.exercises || [], SK = DATA.skills || {};
   var byId = {}; PARTS.forEach(function (p, i) { p.index = i; byId[p.id] = p; });
   var qById = {}; QUIZ.forEach(function (q) { qById[q.id] = q; });
+  var exById = {}; EX.forEach(function (e) { exById[e.id] = e; });
   var main = document.getElementById('main'), side = document.getElementById('side'), scrim = document.getElementById('scrim');
   var navEl = document.getElementById('nav'), searchEl = document.getElementById('search');
   var totalHours = PARTS.reduce(function (s, p) { return s + p.hours; }, 0);
@@ -118,6 +119,7 @@
     var ids = {}; (local.sims || []).forEach(function (x) { ids[x.id] = 1; });
     (remote.sims || []).forEach(function (x) { if (!ids[x.id]) (out.sims = out.sims || []).push(x); });
     if (out.sims) out.sims.sort(function (a, b) { return a.date - b.date; });
+    var ex = out.ex || {}; Object.keys(remote.ex || {}).forEach(function (k) { if (!ex[k] || (remote.ex[k].ok && !ex[k].ok)) ex[k] = remote.ex[k]; }); out.ex = ex;
     var q = out.quiz || {}; Object.keys(remote.quiz || {}).forEach(function (k) { if (!q[k] || remote.quiz[k].best > q[k].best) q[k] = remote.quiz[k]; }); out.quiz = q;
     return out;
   }
@@ -187,7 +189,7 @@
       });
     });
     h += '<div class="stage-title">Инструменты</div>';
-    [['simulation', 'Симуляция'], ['quiz', 'Тренажёр'], ['profile', 'Профиль и данные']].concat(role() === 'mentor' ? [['student', 'Данные студента']] : []).forEach(function (it) {
+    [['simulation', 'Симуляция'], ['practice', 'Упражнения'], ['quiz', 'Тесты'], ['profile', 'Профиль и данные']].concat(role() === 'mentor' ? [['student', 'Данные студента']] : []).forEach(function (it) {
       h += '<a class="nav-item" href="#' + it[0] + '"' + (current === it[0] ? ' aria-current="page"' : '') + '><span class="dot tool"></span><span>' + it[1] + '</span></a>';
     });
     h += '<div class="side-user"><span>' + esc(USERS[user].name) + ' · ' + esc(user) + '</span><button type="button" class="linkbtn" id="logoutBtn">Выйти</button><span id="syncState" class="sync"></span></div>';
@@ -223,6 +225,7 @@
     h += '<div class="facts">' +
       '<div class="fact"><b>' + PARTS.filter(function (p) { return done[p.id]; }).length + '/' + PARTS.length + '</b><span>тем изучено</span></div>' +
       '<div class="fact"><b>' + (qs.parts ? qs.avg + '%' : '—') + '</b><span>средний результат тестов</span></div>' +
+      '<div class="fact"><b>' + EX.filter(function (e) { return exDone(e.id); }).length + '/' + EX.length + '</b><span><a href="#practice">упражнений выполнено</a></span></div>' +
       '<div class="fact"><b>' + sims.length + '</b><span>симуляций пройдено</span></div>' +
       '<div class="fact"><b>' + (dl === null ? '—' : dl >= 0 ? dl : 0) + '</b><span>' + (dl === null ? '<a href="#profile">задайте дату чемпионата</a>' : 'дней до чемпионата') + '</span></div></div>';
     h += '<div class="row">' + (next ? '<a class="cta green" href="#' + next.id + '">Продолжить: ' + esc(next.title) + '</a>' : '<a class="cta green" href="#simulation">Все темы пройдены. К симуляции</a>') + '<a class="cta" href="#simulation">Симуляция</a></div>';
@@ -240,6 +243,198 @@
     });
     h += '</div><h2 class="sec">Как идти по плану</h2><div class="prose"><ul><li>Читайте темы по порядку: каждая раскрывается по подтемам, а в конце есть тест и место для заметок.</li><li>Отмечайте «Тема изучена» только после теста выше 70%.</li><li>Раз в неделю проходите <a href="#simulation">симуляцию</a>, записывайте непонятное и повторяйте по списку.</li><li>Если вам удобно по два часа в день, весь план занимает около ' + Math.ceil(totalHours / 2 / 7) + ' недель.</li></ul></div></div>';
     main.innerHTML = h;
+  }
+
+  /* =============== упражнения =============== */
+  function exState() { return ud('ex', {}); }
+  function exDone(id) { var e = exState()[id]; return !!(e && e.ok); }
+  function exMark(id, ok) {
+    var m = exState(), r = m[id] || { tries: 0 };
+    r.tries = (r.tries || 0) + 1; if (ok) { r.ok = true; r.at = Date.now(); }
+    m[id] = r; us('ex', m);
+  }
+  function exOf(partId) { return EX.filter(function (e) { return e.part === partId; }); }
+  function exProgress(partId) { var l = exOf(partId); return { done: l.filter(function (e) { return exDone(e.id); }).length, total: l.length }; }
+  function skillProgress(partId, k) {
+    var l = exOf(partId).filter(function (e) { return e.skill === k; });
+    return { done: l.filter(function (e) { return exDone(e.id); }).length, total: l.length };
+  }
+  function norm(v) { return String(v).replace(/\s+/g, ' ').trim(); }
+  var TYPE_NAMES = { fill: 'Заполните пропуски', predict: 'Что выведет код?', bug: 'Найдите ошибку', order: 'Расставьте по порядку', write: 'Напишите код' };
+  function hl(code) { try { if (window.hljs && window.hljs.getLanguage && window.hljs.getLanguage('dart')) return window.hljs.highlight(code, { language: 'dart' }).value; } catch (e) { /* без подсветки */ } return esc(code); }
+
+  function renderExercise(e, root) {
+    var st = exState()[e.id] || {};
+    var card = document.createElement('div'); card.className = 'ex-card' + (st.ok ? ' solved' : ''); card.dataset.id = e.id;
+    var head = '<div class="ex-head"><span class="tag ex-' + e.t + '">' + TYPE_NAMES[e.t] + '</span><b class="ex-title">' + esc(e.title) + '</b><span class="ex-st" data-st>' + (st.ok ? '✓ выполнено' : (st.tries ? 'попыток: ' + st.tries : '')) + '</span></div>';
+    var body = '', hintBtn = e.hint || (e.hints && e.hints.length) ? '<button type="button" class="mini" data-act="hint">Подсказка</button>' : '';
+    if (e.t === 'fill') {
+      var code = esc(e.code).replace(/\[\[(\d+)\]\]/g, function (_, n) {
+        var longest = Math.max.apply(null, e.answers[n - 1].map(function (a) { return a.length; }));
+        return '<input class="blank" data-n="' + n + '" style="width:' + (Math.max(longest, 3) + 2) + 'ch" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" aria-label="Пропуск ' + n + '">';
+      });
+      body = '<pre class="ex-code wrap">' + code + '</pre><div class="row"><button type="button" class="cta green sm" data-act="check">Проверить</button>' + hintBtn + '<button type="button" class="mini" data-act="reveal">Показать ответ</button><button type="button" class="mini" data-act="reset">Сбросить</button></div>';
+    } else if (e.t === 'predict') {
+      var lines = e.answer[0].split('\n').length;
+      body = '<pre class="ex-code"><code>' + hl(e.code) + '</code></pre><label class="small" for="' + e.id + '-in"><b>Что появится в консоли?</b> Каждая строка вывода на отдельной строке.</label><textarea id="' + e.id + '-in" class="ex-in" rows="' + Math.max(2, lines) + '" spellcheck="false" autocapitalize="none"></textarea><div class="row"><button type="button" class="cta green sm" data-act="check">Проверить</button>' + hintBtn + '<button type="button" class="mini" data-act="reveal">Показать ответ</button><button type="button" class="mini" data-act="reset">Сбросить</button></div>';
+    } else if (e.t === 'bug') {
+      var ls = e.code.split('\n');
+      body = '<p class="small"><b>Нажмите на строку, в которой ошибка.</b></p><div class="bugcode">' + ls.map(function (l, i) { return '<button type="button" class="codeline" data-n="' + (i + 1) + '"><i>' + (i + 1) + '</i><span>' + esc(l || ' ') + '</span></button>'; }).join('') + '</div><div class="row">' + hintBtn + '<button type="button" class="mini" data-act="reveal">Показать ответ</button></div>';
+    } else if (e.t === 'order') {
+      var order = shuffle(e.lines.map(function (_, i) { return i; }));
+      var tries = 0; while (order.every(function (v, i) { return v === i; }) && tries++ < 10) order = shuffle(order);
+      card._order = order;
+      body = '<p class="small">' + esc(e.intro || 'Расставьте строки в правильном порядке.') + '</p><ol class="ordlist" data-ord></ol><div class="row"><button type="button" class="cta green sm" data-act="check">Проверить</button>' + hintBtn + '<button type="button" class="mini" data-act="reveal">Показать ответ</button><button type="button" class="mini" data-act="reset">Сбросить</button></div>';
+    } else if (e.t === 'write') {
+      var drafts = ud('exd', {});
+      body = '<p class="ex-prompt">' + inline(e.prompt).replace(/\n/g, '<br>') + '</p><textarea id="' + e.id + '-code" class="ex-in code" rows="' + Math.min(18, Math.max(7, e.starter.split('\n').length + 3)) + '" spellcheck="false" autocapitalize="none" autocorrect="off" aria-label="Ваш код">' + esc(drafts[e.id] != null ? drafts[e.id] : e.starter) + '</textarea>' +
+        '<div class="row"><button type="button" class="cta green sm" data-act="check">Проверить по ключевым словам</button>' + hintBtn + '<button type="button" class="mini" data-act="solution">Показать решение</button><button type="button" class="mini" data-act="dartpad">Открыть DartPad</button><button type="button" class="mini" data-act="resetcode">Сбросить код</button></div>' +
+        '<label class="selfok"><input type="checkbox" data-act="self"' + (st.ok ? ' checked' : '') + '> Я запустила код в DartPad (или на телефоне), и он работает</label>';
+    }
+    card.innerHTML = head + '<div class="ex-body">' + body + '</div><div class="ex-feed" aria-live="polite"></div>';
+    root.appendChild(card);
+    var feed = card.querySelector('.ex-feed'), revealed = false, hintIdx = 0;
+    function setFeed(html, cls) { feed.className = 'ex-feed ' + (cls || ''); feed.innerHTML = html; }
+    function finish(ok) {
+      exMark(e.id, ok);
+      var s2 = exState()[e.id] || {};
+      card.querySelector('[data-st]').textContent = s2.ok ? '✓ выполнено' : 'попыток: ' + s2.tries;
+      card.classList.toggle('solved', !!s2.ok);
+      refreshPanels();
+    }
+    function whyHtml() { return e.why ? '<div class="why">' + inline(e.why) + '</div>' : ''; }
+    function drawOrder() {
+      var ol = card.querySelector('[data-ord]'); if (!ol) return;
+      ol.innerHTML = card._order.map(function (idx, pos) { return '<li><code>' + esc(e.lines[idx]) + '</code><span class="ordbtns"><button type="button" class="mini" data-mv="-1" data-pos="' + pos + '" aria-label="Вверх"' + (pos === 0 ? ' disabled' : '') + '>↑</button><button type="button" class="mini" data-mv="1" data-pos="' + pos + '" aria-label="Вниз"' + (pos === card._order.length - 1 ? ' disabled' : '') + '>↓</button></span></li>'; }).join('');
+    }
+    if (e.t === 'order') drawOrder();
+    card.addEventListener('click', function (ev) {
+      var mv = ev.target.closest('[data-mv]');
+      if (mv && e.t === 'order') { var pos = +mv.dataset.pos, d = +mv.dataset.mv, o = card._order, t = o[pos]; o[pos] = o[pos + d]; o[pos + d] = t; drawOrder(); return; }
+      var line = ev.target.closest('.codeline');
+      if (line && e.t === 'bug' && !revealed) {
+        var n = +line.dataset.n, okLines = Array.isArray(e.line) ? e.line : [e.line], ok = okLines.indexOf(n) >= 0;
+        card.querySelectorAll('.codeline').forEach(function (b) { b.classList.remove('bad', 'good'); });
+        line.classList.add(ok ? 'good' : 'bad');
+        if (ok) okLines.forEach(function (x) { var b = card.querySelector('.codeline[data-n="' + x + '"]'); if (b) b.classList.add('good'); });
+        finish(ok); setFeed(ok ? '<b>Верно!</b>' + whyHtml() : '<b>Не эта строка.</b> Перечитайте код построчно и попробуйте ещё раз.', ok ? 'okf' : 'badf');
+        return;
+      }
+      var b = ev.target.closest('[data-act]'); if (!b || b.type === 'checkbox') return;
+      var act = b.dataset.act;
+      if (act === 'hint') {
+        if (e.t === 'write' && e.hints && e.hints.length) { var h = e.hints[Math.min(hintIdx, e.hints.length - 1)]; setFeed('<b>Подсказка ' + (Math.min(hintIdx, e.hints.length - 1) + 1) + ' из ' + e.hints.length + ':</b> ' + inline(h), 'hintf'); hintIdx++; }
+        else setFeed('<b>Подсказка:</b> ' + inline(e.hint || ''), 'hintf');
+      } else if (act === 'check') {
+        if (e.t === 'fill') {
+          if (revealed) { setFeed('Ответ уже показан. Нажмите «Сбросить» и попробуйте сами.', 'hintf'); return; }
+          var all = true;
+          card.querySelectorAll('.blank').forEach(function (inp) {
+            var accepted = e.answers[inp.dataset.n - 1].map(norm), good = accepted.indexOf(norm(inp.value)) >= 0;
+            inp.classList.toggle('ok', good); inp.classList.toggle('bad', !good); if (!good) all = false;
+          });
+          finish(all); setFeed(all ? '<b>Верно!</b>' + whyHtml() : '<b>Есть ошибки.</b> Красные пропуски нужно исправить. Регистр букв важен.', all ? 'okf' : 'badf');
+        } else if (e.t === 'predict') {
+          if (revealed) { setFeed('Ответ уже показан.', 'hintf'); return; }
+          var val = card.querySelector('.ex-in').value.split('\n').map(norm).join('\n').trim();
+          var good2 = e.answer.some(function (a) { return a.split('\n').map(norm).join('\n').trim() === val; });
+          finish(good2); setFeed(good2 ? '<b>Верно!</b>' + whyHtml() : '<b>Не совпало.</b> Пройдите код по шагам и запишите значения. Каждый вывод print на новой строке.', good2 ? 'okf' : 'badf');
+        } else if (e.t === 'order') {
+          if (revealed) { setFeed('Ответ уже показан. Нажмите «Сбросить» и попробуйте сами.', 'hintf'); return; }
+          var good3 = card._order.every(function (v, i) { return v === i; });
+          finish(good3); setFeed(good3 ? '<b>Верно!</b>' + whyHtml() : '<b>Порядок неверный.</b> Подумайте, что должно произойти раньше.', good3 ? 'okf' : 'badf');
+        } else if (e.t === 'write') {
+          var code2 = card.querySelector('.ex-in').value, res = e.checks.map(function (c) { var okk = false; try { okk = new RegExp(c.re).test(code2); } catch (x) { okk = false; } return { l: c.label, ok: okk }; });
+          var all2 = res.every(function (r) { return r.ok; });
+          var dr = ud('exd', {}); dr[e.id] = code2; us('exd', dr);
+          finish(all2);
+          setFeed('<ul class="checks">' + res.map(function (r) { return '<li class="' + (r.ok ? 'y' : 'n') + '">' + (r.ok ? '✓ ' : '✗ ') + esc(r.l) + '</li>'; }).join('') + '</ul>' + (all2 ? '<b>Все проверки пройдены.</b> Теперь запустите код в DartPad, чтобы убедиться, что он работает. Эта проверка смотрит только на ключевые слова.' : '<b>Не все проверки пройдены.</b> Исправьте код и нажмите ещё раз или откройте подсказку.'), all2 ? 'okf' : 'badf');
+        }
+      } else if (act === 'reveal') {
+        revealed = true;
+        if (e.t === 'fill') { card.querySelectorAll('.blank').forEach(function (inp) { inp.value = e.answers[inp.dataset.n - 1][0]; inp.disabled = true; inp.classList.remove('bad', 'ok'); }); }
+        else if (e.t === 'predict') { card.querySelector('.ex-in').value = e.answer[0]; card.querySelector('.ex-in').disabled = true; }
+        else if (e.t === 'bug') { (Array.isArray(e.line) ? e.line : [e.line]).forEach(function (x) { var bb = card.querySelector('.codeline[data-n="' + x + '"]'); if (bb) bb.classList.add('good'); }); }
+        else if (e.t === 'order') { card._order = e.lines.map(function (_, i) { return i; }); drawOrder(); }
+        setFeed('<b>Ответ показан</b> (в выполненные не засчитывается).' + whyHtml(), 'hintf');
+      } else if (act === 'reset') {
+        revealed = false; setFeed('', '');
+        card.querySelectorAll('.blank').forEach(function (inp) { inp.value = ''; inp.disabled = false; inp.classList.remove('ok', 'bad'); });
+        if (e.t === 'predict') { var ta = card.querySelector('.ex-in'); ta.value = ''; ta.disabled = false; }
+        if (e.t === 'bug') card.querySelectorAll('.codeline').forEach(function (bb) { bb.classList.remove('good', 'bad'); });
+        if (e.t === 'order') { var o2 = shuffle(e.lines.map(function (_, i) { return i; })), t2 = 0; while (o2.every(function (v, i) { return v === i; }) && t2++ < 10) o2 = shuffle(o2); card._order = o2; drawOrder(); }
+      } else if (act === 'solution') {
+        setFeed('<b>Решение:</b><pre class="ex-code"><code>' + hl(e.solution) + '</code></pre>' + whyHtml(), 'hintf');
+      } else if (act === 'resetcode') {
+        card.querySelector('.ex-in').value = e.starter; var d2 = ud('exd', {}); delete d2[e.id]; us('exd', d2);
+      } else if (act === 'dartpad') {
+        var txt = card.querySelector('.ex-in').value;
+        try { navigator.clipboard.writeText(txt).then(function () { setFeed('Код скопирован. В открывшемся DartPad вставьте его (Ctrl+V) вместо примера и нажмите Run. Для кода с виджетами Flutter выберите в DartPad режим Flutter.', 'hintf'); }, function () { setFeed('Не удалось скопировать автоматически: выделите код в поле и скопируйте вручную.', 'hintf'); }); } catch (x) { setFeed('Выделите код в поле и скопируйте вручную.', 'hintf'); }
+        window.open('https://dartpad.dev/', '_blank', 'noopener');
+      }
+    });
+    var self = card.querySelector('[data-act="self"]');
+    if (self) self.addEventListener('change', function () { if (self.checked) { var m = exState(), r = m[e.id] || { tries: 0 }; r.ok = true; r.at = Date.now(); r.self = true; m[e.id] = r; us('ex', m); card.classList.add('solved'); card.querySelector('[data-st]').textContent = '✓ выполнено'; refreshPanels(); } });
+    var ed = card.querySelector('textarea.ex-in.code');
+    if (ed) { var tmr; ed.addEventListener('input', function () { clearTimeout(tmr); tmr = setTimeout(function () { var dd = ud('exd', {}); dd[e.id] = ed.value; us('exd', dd); }, 500); }); ed.addEventListener('keydown', function (k) { if (k.key === 'Tab') { k.preventDefault(); var st0 = ed.selectionStart; ed.value = ed.value.slice(0, st0) + '  ' + ed.value.slice(ed.selectionEnd); ed.selectionStart = ed.selectionEnd = st0 + 2; } }); }
+  }
+
+  var panelRefreshers = [];
+  function refreshPanels() { panelRefreshers.forEach(function (f) { f(); }); renderNavQuiet(); }
+  function renderNavQuiet() { var d = $('miniProgress'); if (d) d.textContent = percent() + '%'; }
+
+  // Панель «Практика» для темы: карта навыков и упражнения
+  function mountPractice(el, partId) {
+    var list = exOf(partId), skills = SK[partId] || [];
+    if (!list.length) { el.innerHTML = '<p class="muted">Для этой темы упражнений пока нет.</p>'; return; }
+    el.innerHTML = '<div class="skillmap" data-map></div><div data-skills></div>';
+    var mapEl = el.querySelector('[data-map]'), wrap = el.querySelector('[data-skills]');
+    skills.forEach(function (sk, i) {
+      var k = i + 1, items = list.filter(function (e) { return e.skill === k; });
+      if (!items.length) return;
+      var d = document.createElement('details'); d.className = 'skill'; d.dataset.k = k;
+      d.innerHTML = '<summary><span class="sk-t">' + inline(sk) + '</span><span class="sk-p" data-p></span></summary><div class="sk-body"></div>';
+      var body = d.querySelector('.sk-body'); items.forEach(function (e) { renderExercise(e, body); });
+      wrap.appendChild(d);
+    });
+    function draw() {
+      var mastered = 0, total = 0, rows = '';
+      skills.forEach(function (sk, i) {
+        var p = skillProgress(partId, i + 1); if (!p.total) return; total++;
+        var ok = p.done === p.total; if (ok) mastered++;
+        rows += '<div class="sk-row' + (ok ? ' ok' : '') + '"><span class="dot' + (ok ? ' on' : '') + '"></span><span class="sk-name">' + inline(sk) + '</span><span class="sk-num">' + p.done + '/' + p.total + '</span></div>';
+        var det = wrap.querySelector('details.skill[data-k="' + (i + 1) + '"] [data-p]'); if (det) det.textContent = ok ? 'Освоено ✓' : p.done + ' из ' + p.total;
+      });
+      mapEl.innerHTML = '<div class="sk-head"><b>Карта навыков</b><span>' + mastered + ' из ' + total + ' освоено</span></div>' + rows + '<p class="muted small">Навык считается освоенным, когда выполнены все его упражнения. Если упражнение не получается, откройте подсказку, посмотрите решение и вернитесь к нему позже.</p>';
+    }
+    draw(); panelRefreshers.push(draw);
+    var first = wrap.querySelector('details.skill:not(.ok)'); if (first) first.open = true;
+  }
+
+  function renderPracticeHub() {
+    panelRefreshers = [];
+    var parts = PARTS.filter(function (p) { return exOf(p.id).length; });
+    var tot = EX.length, done = EX.filter(function (e) { return exDone(e.id); }).length;
+    var h = '<div class="col"><div class="crumb">Тренажёр</div><h1 class="h1s">Упражнения</h1><p class="lead">Практика на деле: пропуски в коде, «что выведет код», поиск ошибки, расстановка строк и написание своего кода. Выполнено ' + done + ' из ' + tot + '.</p>';
+    h += '<div class="row"><button type="button" class="cta green" id="exRand">Случайное невыполненное</button></div><div id="exOne" style="margin-top:14px"></div>';
+    h += '<h2 class="sec">По темам</h2><div class="plist">';
+    parts.forEach(function (p) {
+      var pr = exProgress(p.id), pc = Math.round(pr.done / pr.total * 100);
+      h += '<a class="pitem" href="#practice-' + p.id + '"><span class="pt">' + esc(p.title) + '</span><span class="pm">' + pr.done + ' из ' + pr.total + '</span><span class="pbar"><i style="width:' + pc + '%"></i></span></a>';
+    });
+    h += '</div></div>';
+    main.innerHTML = h;
+    $('exRand').addEventListener('click', function () {
+      var left = EX.filter(function (e) { return !exDone(e.id); }); var box = $('exOne'); box.innerHTML = '';
+      if (!left.length) { box.innerHTML = '<p class="lead">Все упражнения выполнены. Отличная работа!</p>'; return; }
+      var e = left[Math.floor(Math.random() * left.length)];
+      box.innerHTML = '<p class="muted small">Тема: <a href="#' + e.part + '">' + esc(byId[e.part].title) + '</a></p>'; renderExercise(e, box); box.scrollIntoView({ behavior: 'smooth' });
+    });
+  }
+  function renderPracticePart(p) {
+    panelRefreshers = [];
+    main.innerHTML = '<div class="col"><div class="crumb"><a href="#practice">Упражнения</a> · ' + esc(p.title) + '</div><h1 class="h1s">Практика: ' + esc(p.title) + '</h1><p class="lead">Цель: после упражнений уметь делать всё из списка навыков. <a href="#' + p.id + '">Открыть теорию</a></p><div id="pm"></div></div>';
+    mountPractice($('pm'), p.id);
   }
 
   /* =============== тест (общий движок) =============== */
@@ -299,14 +494,17 @@
     var st = STAGES.filter(function (s) { return s.n === p.stage; })[0];
     var prev = PARTS[p.index - 1], next = PARTS[p.index + 1], done = doneMap(), qr = ud('quiz', {})[p.id];
     var qids = QUIZ.filter(function (q) { return q.part === p.id; }).map(function (q) { return q.id; });
-    var h = '<div class="col"><article><div class="crumb">Этап ' + p.stage + ' · ' + esc(st.title) + '</div><h1>' + esc(p.title) + '</h1><p class="lead">' + esc(p.lead) + '</p><div class="meta"><span class="chip">≈ ' + p.hours + ' ч</span><span class="chip">' + p.minutes + ' мин чтения</span>' + (qr ? '<span class="chip ok">Тест: ' + qr.best + '%</span>' : '') + '</div>';
+    var h = '<div class="col"><article><div class="crumb">Этап ' + p.stage + ' · ' + esc(st.title) + '</div><h1>' + esc(p.title) + '</h1><p class="lead">' + esc(p.lead) + '</p><div class="meta"><span class="chip">≈ ' + p.hours + ' ч</span><span class="chip">' + p.minutes + ' мин чтения</span>' + (qr ? '<span class="chip ok">Тест: ' + qr.best + '%</span>' : '') + (exOf(p.id).length ? '<span class="chip' + (exProgress(p.id).done === exProgress(p.id).total ? ' ok' : '') + '">Упражнения: ' + exProgress(p.id).done + '/' + exProgress(p.id).total + '</span>' : '') + '</div>';
     h += '<div class="toc" id="toc"></div><div class="row tools"><button class="mini" type="button" id="expAll">Развернуть все</button><button class="mini" type="button" id="colAll">Свернуть все</button></div><div class="prose" id="prose">' + p.html + '</div>';
+    if (exOf(p.id).length) h += '<section class="block" id="practiceBlock"><h2 class="blk">Практика: научитесь на деле</h2><p class="muted">Прочитать мало, нужно потренироваться. Выполните упражнения по каждому навыку: после них вы сможете всё из списка «Что нужно уметь».</p><div id="practiceMount"></div></section>';
     if (qids.length) h += '<section class="block" id="quizBlock"><h2 class="blk">Проверь себя</h2><p class="muted">' + qids.length + ' вопросов по теме. Ответы сохраняются: ошибки попадут в «Мои ошибки» в тренажёре.</p><div id="quizMount"></div></section>';
     h += '<section class="block"><h2 class="blk">Мои заметки по теме</h2><textarea id="topicNote" class="note-area" rows="4" placeholder="Что непонятно, что запомнить, примеры из своего кода…" aria-label="Заметки по теме"></textarea><div class="muted small" id="noteSaved">Сохраняется автоматически</div></section>';
-    h += '<div class="done-bar"><label><input type="checkbox" id="doneBox"' + (done[p.id] ? ' checked' : '') + '> Тема изучена</label>' + (qids.length ? '<a class="cta green" href="#quizBlock" id="toQuiz">К тесту</a>' : '') + '</div>';
+    h += '<div class="done-bar"><label><input type="checkbox" id="doneBox"' + (done[p.id] ? ' checked' : '') + '> Тема изучена</label>' + (exOf(p.id).length ? '<a class="cta" href="#practiceBlock" id="toPractice">К практике</a>' : '') + (qids.length ? '<a class="cta green" href="#quizBlock" id="toQuiz">К тесту</a>' : '') + '</div>';
     h += '<nav class="pager" aria-label="Соседние темы">' + (prev ? '<a href="#' + prev.id + '"><small>Назад</small>' + esc(prev.title) + '</a>' : '<a class="empty" aria-hidden="true"></a>') + (next ? '<a href="#' + next.id + '"><small>Дальше</small>' + esc(next.title) + '</a>' : '<a href="#simulation"><small>Дальше</small>Симуляция</a>') + '</nav></article></div>';
     main.innerHTML = h;
     enhance($('prose'), p.id);
+    panelRefreshers = [];
+    if (exOf(p.id).length) mountPractice($('practiceMount'), p.id);
     if (qids.length) mountQuiz($('quizMount'), qids, { partId: p.id });
     var notes = ud('notes', {}), ta = $('topicNote'), timer;
     ta.value = notes[p.id] || '';
@@ -315,6 +513,7 @@
       timer = setTimeout(function () { var n = ud('notes', {}); n[p.id] = ta.value; us('notes', n); $('noteSaved').textContent = 'Сохранено'; }, 400);
     });
     $('doneBox').addEventListener('change', function (e) { var d = doneMap(); if (e.target.checked) d[p.id] = 1; else delete d[p.id]; us('done', d); renderNav(p.id); });
+    var tp = $('toPractice'); if (tp) tp.addEventListener('click', function (e) { e.preventDefault(); $('practiceBlock').scrollIntoView({ behavior: 'smooth' }); });
     var tq = $('toQuiz'); if (tq) tq.addEventListener('click', function (e) { e.preventDefault(); $('quizBlock').scrollIntoView({ behavior: 'smooth' }); });
   }
   function enhance(root, pid) {
@@ -368,7 +567,7 @@
   /* =============== тренажёр =============== */
   function renderQuizHub() {
     var wrong = ud('wrong', []).filter(function (id) { return qById[id]; }), res = ud('quiz', {});
-    var h = '<div class="col"><div class="crumb">Тренажёр</div><h1 class="h1s">Проверка знаний</h1><p class="lead">Всего вопросов: ' + QUIZ.length + '. Тест по каждой теме лежит в конце самой темы, а здесь можно потренироваться вперемешку и разобрать ошибки.</p>';
+    var h = '<div class="col"><div class="crumb">Тренажёр</div><h1 class="h1s">Тесты</h1><p class="lead">Всего вопросов: ' + QUIZ.length + '. Тест по каждой теме лежит в конце самой темы, а здесь можно потренироваться вперемешку и разобрать ошибки. Практику с кодом ищите в разделе <a href="#practice">Упражнения</a>.</p>';
     h += '<div class="modes"><button class="mode" type="button" data-m="rand"><b>10 случайных</b><span>со всех тем</span></button><button class="mode" type="button" data-m="wrong"' + (wrong.length ? '' : ' disabled') + '><b>Мои ошибки</b><span>' + wrong.length + ' вопросов к повторению</span></button>';
     STAGES.forEach(function (s) { if (QUIZ.some(function (q) { return byId[q.part].stage === s.n; })) h += '<button class="mode" type="button" data-m="st' + s.n + '"><b>Этап ' + s.n + '</b><span>' + esc(s.title) + '</span></button>'; });
     h += '</div><div id="hubMount" style="margin-top:16px"></div>';
@@ -559,7 +758,7 @@
   /* =============== профиль, экспорт и импорт =============== */
   function exportData() {
     var out = { v: 1, app: 'flutter-prep', user: user, exportedAt: Date.now(), data: {} };
-    ['done', 'quiz', 'wrong', 'notes', 'sims', 'settings'].forEach(function (k) { out.data[k] = ud(k, k === 'wrong' || k === 'sims' ? [] : {}); });
+    ['done', 'quiz', 'wrong', 'notes', 'sims', 'settings', 'ex', 'exd'].forEach(function (k) { out.data[k] = ud(k, k === 'wrong' || k === 'sims' ? [] : {}); });
     PARTS.forEach(function (p) { var c = ud('chk_' + p.id, null); if (c) out.data['chk_' + p.id] = c; });
     return out;
   }
@@ -615,8 +814,8 @@
       var rem = live.status === 'running' ? live.endAt - Date.now() : live.remaining;
       h += '<section class="block live"><h2 class="blk">Сейчас идёт симуляция</h2><p><b>' + esc(live.title || 'Без названия') + '</b> · ' + (live.status === 'running' ? 'идёт, осталось ' + fmtDur(rem) : live.status === 'paused' ? 'на паузе, осталось ' + fmtDur(rem) : 'время вышло, ждёт оценки') + ' · заметок: ' + (live.notes || []).length + '</p>' + ((live.notes || []).length ? '<ul class="notes">' + live.notes.map(function (n) { return noteHtml(n, false); }).join('') + '</ul>' : '') + '</section>';
     }
-    h += '<div class="facts"><div class="fact"><b>' + Math.round(cnt / PARTS.length * 100) + '%</b><span>изучено (' + cnt + ' из ' + PARTS.length + ')</span></div><div class="fact"><b>' + Object.keys(quiz).length + '</b><span>тестов пройдено</span></div><div class="fact"><b>' + sims.length + '</b><span>симуляций</span></div><div class="fact"><b>' + ((d.settings && d.settings.exam) ? esc(d.settings.exam) : '—') + '</b><span>дата чемпионата</span></div></div>';
-    h += '<h2 class="sec">Темы</h2><div class="tablewrap"><table class="plain"><thead><tr><th>Тема</th><th>Изучена</th><th>Тест</th><th>Заметка</th></tr></thead><tbody>' + PARTS.map(function (p) { var q = quiz[p.id]; return '<tr><td>' + esc(p.title) + '</td><td>' + (done[p.id] ? '✓' : '—') + '</td><td>' + (q ? q.best + '% (' + q.attempts + ')' : '—') + '</td><td>' + (notes[p.id] ? esc(notes[p.id]).slice(0, 160) : '') + '</td></tr>'; }).join('') + '</tbody></table></div>';
+    h += '<div class="facts"><div class="fact"><b>' + Math.round(cnt / PARTS.length * 100) + '%</b><span>изучено (' + cnt + ' из ' + PARTS.length + ')</span></div><div class="fact"><b>' + Object.keys(quiz).length + '</b><span>тестов пройдено</span></div><div class="fact"><b>' + Object.keys(d.ex || {}).filter(function (k) { return d.ex[k].ok; }).length + '/' + EX.length + '</b><span>упражнений</span></div><div class="fact"><b>' + sims.length + '</b><span>симуляций</span></div><div class="fact"><b>' + ((d.settings && d.settings.exam) ? esc(d.settings.exam) : '—') + '</b><span>дата чемпионата</span></div></div>';
+    h += '<h2 class="sec">Темы</h2><div class="tablewrap"><table class="plain"><thead><tr><th>Тема</th><th>Изучена</th><th>Тест</th><th>Упражнения</th><th>Заметка</th></tr></thead><tbody>' + PARTS.map(function (p) { var q = quiz[p.id], ex = d.ex || {}, el = EX.filter(function (e) { return e.part === p.id; }), ed = el.filter(function (e) { return ex[e.id] && ex[e.id].ok; }).length; return '<tr><td>' + esc(p.title) + '</td><td>' + (done[p.id] ? '✓' : '—') + '</td><td>' + (q ? q.best + '% (' + q.attempts + ')' : '—') + '</td><td>' + (el.length ? ed + '/' + el.length : '—') + '</td><td>' + (notes[p.id] ? esc(notes[p.id]).slice(0, 160) : '') + '</td></tr>'; }).join('') + '</tbody></table></div>';
     h += '<h2 class="sec">Симуляции</h2>' + historyHtml(sims, true);
     return h;
   }
@@ -655,10 +854,12 @@
   /* =============== маршрутизация и запуск =============== */
   function route() {
     if (!user) return;
-    clearInterval(studentTimer);
+    clearInterval(studentTimer); panelRefreshers = [];
     var id = location.hash.replace('#', '') || 'home', cur = id;
     if (id === 'home') renderHome();
     else if (id === 'quiz') renderQuizHub();
+    else if (id === 'practice') { renderPracticeHub(); }
+    else if (id.indexOf('practice-') === 0 && byId[id.slice(9)]) { renderPracticePart(byId[id.slice(9)]); cur = 'practice'; }
     else if (id === 'simulation') renderSim();
     else if (id === 'profile') renderProfile();
     else if (id === 'student' && role() === 'mentor') renderStudent();

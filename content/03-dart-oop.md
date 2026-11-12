@@ -281,3 +281,105 @@ class GameMapper {
 3. Напишите `enum GameCategory` с полем `title` и методом `fromString`.
 4. Сделайте `sealed class` состояния экрана с тремя вариантами и `switch` по нему.
 5. Объясните, чем DTO отличается от Entity, и приведите пример из своей симуляции.
+
+## Учимся: навык 1. Класс с fromJson и toJson
+
+**Рецепт «модель из ответа сервера» за 5 шагов.** Допустим, сервер присылает `{"id": "7", "title": "Битва", "finished": false}`.
+
+1. **Выпишите поля** и их типы: `id` String, `title` String, `finished` bool.
+2. **Сделайте поля `final`** и конструктор с именованными параметрами.
+3. **Напишите `factory Класс.fromJson(Map<String, dynamic> json)`**: для каждого поля берите `json['ключ']` и приводите тип (`as String`).
+4. **Напишите `toJson()`**: верните словарь с теми же ключами.
+5. **Проверьте** на примере: создайте объект из JSON и превратите обратно.
+
+```dart
+class Game {
+  final String id;
+  final String title;
+  final bool finished;
+  const Game({required this.id, required this.title, this.finished = false});
+
+  factory Game.fromJson(Map<String, dynamic> json) => Game(
+        id: json['id'].toString(),
+        title: json['title'] as String,
+        finished: json['finished'] as bool? ?? false,
+      );
+
+  Map<String, dynamic> toJson() => {'id': id, 'title': title, 'finished': finished};
+}
+```
+
+**Важные детали:** `id` часто приходит числом, поэтому `.toString()`; необязательное поле: `as bool?` и `?? значение по умолчанию`; ключи в `toJson` должны совпадать с теми, что ждёт сервер (смотрите документацию API).
+
+## Учимся: навык 2. extends, implements, with
+
+**Вопрос, который нужно задать:** «Что я хочу получить от другого класса — **код**, **обещание** или **способность**?»
+
+| Хочу | Слово | Пример |
+|---|---|---|
+| Унаследовать готовый код и поля | `extends` | `PrimaryButton extends BaseButton` |
+| Только **пообещать**, что реализую те же методы | `implements` | `HttpApiClient implements ApiClient` |
+| Добавить одну способность нескольким классам | `with` | `class Repo with Loggable` |
+
+**Пример на сетевом слое.** Приложению нужен «кто-то, кто умеет делать запросы»:
+
+```dart
+abstract interface class ApiClient {                       // контракт: что умеем
+  Future<Map<String, dynamic>> get(String path);
+}
+class HttpApiClient implements ApiClient { /* на пакете http */ }
+class FakeApiClient implements ApiClient { /* возвращает готовые данные для тестов */ }
+```
+
+Экран и UseCase знают только `ApiClient`. Подставить `HttpApiClient` или `FakeApiClient` можно в одном месте. Это и есть «заменяемость» из задания.
+
+**Частая ошибка.** Использовать `extends` там, где нужен только контракт: лишний код тянется за собой, а заменить реализацию сложнее.
+
+## Учимся: навык 3. Приватность и lib/src
+
+**Правило.** Всё, что начинается с `_`, видно только внутри своего файла. Всё остальное публично.
+
+**Для библиотеки UIKit** это превращается в схему:
+```
+uikit/lib/
+  uikit.dart          ← публичный: только export
+  src/
+    components/ui_button.dart   ← детали реализации
+```
+Файл `uikit.dart` экспортирует то, что приложение **может** использовать. Всё внутри `src/` по соглашению считается внутренним. Приложение пишет единственный импорт `import 'package:uikit/uikit.dart';`.
+
+**Внутри класса:**
+
+```dart
+class Timer1 {
+  int _seconds = 0;                 // приватное: снаружи не изменить
+  int get seconds => _seconds;      // публичное только чтение
+  void tick() => _seconds++;        // единственный способ изменить
+}
+```
+
+Зачем: если завтра вы решите считать секунды иначе, изменится только класс, а не весь код, который его использует.
+
+## Учимся: навык 4. sealed для состояний
+
+**Задача.** Экран со списком игр бывает в трёх состояниях: идёт загрузка, данные получены, произошла ошибка. Нужно, чтобы экран **не мог** забыть обработать одно из них.
+
+**Шаги:**
+1. Объявите `sealed class` для состояния.
+2. Для каждого состояния заведите класс-наследник (с нужными данными).
+3. В экране используйте `switch` по состоянию: компилятор покажет ошибку, если пропущен вариант.
+
+```dart
+sealed class GamesState {}
+class GamesLoading extends GamesState {}
+class GamesLoaded extends GamesState { final List<Game> games; GamesLoaded(this.games); }
+class GamesError extends GamesState { final String message; GamesError(this.message); }
+
+Widget build(GamesState s) => switch (s) {
+      GamesLoading() => const Center(child: CircularProgressIndicator()),
+      GamesLoaded(:final games) => GamesList(games),
+      GamesError(:final message) => Text(message),
+    };
+```
+
+Добавите четвёртое состояние (например, «пусто») и компилятор подсветит все места, где его забыли обработать.

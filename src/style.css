@@ -273,3 +273,62 @@ table.plain th { background: var(--mint-2); }
 .sync { flex-basis: 100%; font-size: 12px; font-weight: 700; color: var(--muted); }
 .sync.ok { color: var(--green-ink); } .sync.bad { color: #b3261e; } .sync.busy { color: var(--muted); }
 .block.live { background: var(--mint); border-color: var(--green); }
+
+/* ===== упражнения ===== */
+.skillmap { border: 2px solid var(--ink); border-radius: 18px; padding: 14px 16px; background: var(--mint); margin-bottom: 14px; }
+.sk-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; font-size: 15px; }
+.sk-head span { font-weight: 800; color: var(--green-ink); }
+.sk-row { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; border-top: 1px solid var(--line); }
+.sk-row .sk-name { flex: 1; min-width: 0; font-weight: 600; font-size: 14.5px; }
+.sk-num { font: 700 13px var(--f-display); white-space: nowrap; }
+.sk-row .dot { margin-top: 2px; }
+details.skill { border: 2px solid var(--line); border-radius: 16px; margin: 10px 0; background: var(--bg); }
+details.skill[open] { border-color: var(--ink); }
+details.skill > summary { list-style: none; cursor: pointer; padding: 12px 14px; display: flex; gap: 10px; align-items: center; justify-content: space-between; font-weight: 800; }
+details.skill > summary::-webkit-details-marker { display: none; }
+.sk-p { font-size: 12px; background: var(--mint-2); border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+.sk-body { padding: 0 12px 12px; display: grid; gap: 12px; min-width: 0; }
+.ex-card { border: 2px solid var(--line); border-radius: 16px; padding: 12px; background: var(--bg); min-width: 0; }
+.ex-card.solved { border-color: var(--green); background: var(--mint); }
+.ex-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+.ex-title { flex: 1 1 160px; font-size: 15px; }
+.ex-st { font-size: 12px; font-weight: 800; color: var(--green-ink); }
+.tag.ex-fill { background: #d6ecff; } .tag.ex-predict { background: #ffe9a8; } .tag.ex-bug { background: #ffd9d4; } .tag.ex-order { background: var(--mint-2); } .tag.ex-write { background: var(--green); }
+.ex-code { margin: 0 0 10px; background: var(--code-bg); border: 2px solid var(--line); border-radius: 12px; padding: 12px; overflow-x: auto; font: 400 13px/1.9 var(--f-mono); white-space: pre; max-width: 100%; }
+.ex-code code { background: none; padding: 0; font: inherit; }
+.blank { font: 500 13px var(--f-mono); border: 0; border-bottom: 2px dashed var(--ink); background: var(--mint-2); border-radius: 6px 6px 0 0; padding: 1px 4px; color: var(--ink); max-width: 100%; text-align: center; }
+.blank:focus { outline: none; background: #fff; border-bottom-style: solid; }
+.blank.ok { background: #b9f5d0; border-bottom-color: #00a647; } .blank.bad { background: #ffd9d4; border-bottom-color: #c0392b; }
+.ex-in { width: 100%; border: 2px solid var(--line); border-radius: 12px; padding: 10px 12px; font: 400 13px/1.55 var(--f-mono); background: var(--bg); color: var(--ink); margin: 6px 0; tab-size: 2; }
+.ex-in.code { white-space: pre; overflow-x: auto; }
+.ex-in:focus { border-color: var(--ink); outline: none; }
+.ex-prompt { margin: 0 0 8px; }
+.cta.sm { padding: 8px 14px; border-radius: 12px; font-size: 14px; }
+.ex-feed { margin-top: 8px; min-width: 0; }
+.ex-feed:empty { display: none; }
+.ex-feed.okf, .ex-feed.badf, .ex-feed.hintf { border-radius: 12px; padding: 10px 12px; font-size: 14.5px; }
+.ex-feed.okf { background: #b9f5d0; } .ex-feed.badf { background: #ffe3e0; } .ex-feed.hintf { background: var(--warn-bg); }
+.ex-feed .why { margin-top: 6px; background: rgba(255,255,255,.6); }
+.ex-feed pre { margin: 6px 0 0; }
+.checks { list-style: none; padding: 0; margin: 0 0 6px; display: grid; gap: 2px; }
+.checks li.y { color: #00682d; font-weight: 700; } .checks li.n { color: #b3261e; font-weight: 700; }
+.selfok { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; font-weight: 600; margin-top: 8px; cursor: pointer; }
+.selfok input { width: 20px; height: 20px; accent-color: var(--green); flex: none; margin-top: 2px; }
+.bugcode { border: 2px solid var(--line); border-radius: 12px; overflow-x: auto; background: var(--code-bg); margin-bottom: 8px; max-width: 100%; }
+.codeline { display: flex; gap: 12px; width: 100%; min-width: max-content; text-align: left; border: 0; background: none; padding: 3px 12px; font: 400 13px/1.7 var(--f-mono); cursor: pointer; color: var(--ink); }
+.codeline:hover { background: var(--mint-2); } .codeline i { color: var(--muted); font-style: normal; width: 2ch; text-align: right; flex: none; } .codeline span { white-space: pre; }
+.codeline.bad { background: #ffd9d4; } .codeline.good { background: #b9f5d0; }
+.ordlist { list-style: none; padding: 0; margin: 6px 0 10px; display: grid; gap: 6px; counter-reset: o; }
+.ordlist li { display: flex; gap: 8px; align-items: center; justify-content: space-between; border: 2px solid var(--line); border-radius: 12px; padding: 6px 8px 6px 12px; background: var(--bg); counter-increment: o; min-width: 0; }
+.ordlist li::before { content: counter(o); font: 700 12px var(--f-display); color: var(--muted); width: 1.4em; flex: none; }
+.ordlist code { flex: 1; min-width: 0; background: none; padding: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 500 13px var(--f-mono); }
+.ordbtns { display: flex; gap: 4px; flex: none; }
+.ordbtns .mini { padding: 4px 10px; font-size: 15px; }
+.mini:disabled { opacity: .35; cursor: default; }
+.plist { display: grid; gap: 8px; }
+.pitem { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; border: 2px solid var(--line); border-radius: 14px; padding: 10px 14px; text-decoration: none; color: var(--ink); }
+.pitem:hover { border-color: var(--ink); background: var(--mint); }
+.pitem .pt { font-weight: 800; } .pitem .pm { font: 700 13px var(--f-display); white-space: nowrap; }
+.pbar { grid-column: 1 / -1; height: 8px; border-radius: 99px; background: var(--mint-2); overflow: hidden; } .pbar i { display: block; height: 100%; background: var(--green); }
+
+.ex-code.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }

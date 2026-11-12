@@ -360,3 +360,109 @@ GestureDetector(
 3. Сделайте экран со списком из 50 элементов на `ListView.builder` с состоянием «пусто».
 4. Подключите свой шрифт и проверьте разные начертания.
 5. Сделайте индикатор страниц `UiPagination` с `AnimatedContainer`.
+
+## Учимся: навык 1. Шрифты и ресурсы в pubspec.yaml
+
+**Порядок действий:**
+1. Положите файлы в проект: `assets/fonts/Manrope-Regular.ttf`, `assets/images/logo.png`.
+2. Откройте `pubspec.yaml`, найдите раздел `flutter:`.
+3. Добавьте `assets:` и `fonts:` с **точными отступами** (два пробела на уровень).
+4. Выполните `flutter pub get`.
+5. **Полностью перезапустите** приложение (hot reload не подхватит новые файлы).
+6. Укажите шрифт в теме или в `TextStyle(fontFamily: 'Manrope')`.
+
+```yaml
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/          # со слэшем на конце: вся папка
+  fonts:
+    - family: Manrope
+      fonts:
+        - asset: assets/fonts/Manrope-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Manrope-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Manrope-Bold.ttf
+          weight: 700
+```
+
+**Соответствие файла и веса:** Light 300, Regular 400, Medium 500, SemiBold 600, Bold 700, ExtraBold 800. Перепутанный файл даёт неверное начертание (в симуляции вес 800 указывал на ExtraLight).
+
+**Чек-лист «не отображается»:** путь, регистр букв, отступы, перезапуск, для пакета `package: 'uikit'`.
+
+## Учимся: навык 2. Форма с валидацией и показом пароля
+
+**Сборка за 6 шагов:**
+1. `final _formKey = GlobalKey<FormState>();`
+2. Контроллеры для полей, `dispose` для них.
+3. `Form(key: _formKey, child: Column(...))`.
+4. В каждом `TextFormField` свой `validator`: возвращает текст ошибки или `null`, если всё хорошо.
+5. Кнопка вызывает `_formKey.currentState!.validate()`; если `true`, отправляем данные.
+6. Показ пароля: булева переменная `_hidden`, `obscureText: _hidden`, иконка в `suffixIcon` меняет её через `setState`.
+
+```dart
+bool _hidden = true;
+
+TextFormField(
+  controller: _password,
+  obscureText: _hidden,
+  validator: (v) => (v == null || v.length < 6) ? 'Минимум 6 символов' : null,
+  decoration: InputDecoration(
+    suffixIcon: IconButton(
+      icon: Icon(_hidden ? Icons.visibility_off : Icons.visibility),
+      onPressed: () => setState(() => _hidden = !_hidden),
+    ),
+  ),
+)
+```
+
+**Не забудьте:** блокировать кнопку на время запроса (`isLoading`), логировать нажатие, показывать ошибку сервера в SnackBar на 5 секунд.
+
+## Учимся: навык 3. Выбор способа навигации
+
+**Вопросы для выбора:**
+1. Пользователь должен иметь возможность вернуться назад? → `push` / `pop`.
+2. Экран больше не нужен (Splash, онбординг, вход)? → `pushReplacement`.
+3. Нужно «начать с чистого листа» (после выхода, после Success)? → `pushAndRemoveUntil` с `(route) => false`.
+4. Нужно вернуть данные назад? → `final result = await Navigator.push<T>(...)` и `Navigator.pop(context, value)`.
+
+**Сценарии из задания:**
+
+| Переход | Метод |
+|---|---|
+| Splash → Онбординг | `pushReplacement` |
+| Онбординг → Регистрация | `pushReplacement` |
+| Landing → Combat Information | `push` |
+| Publish → Success → Landing | `pushAndRemoveUntil` |
+| Выход из аккаунта | `pushAndRemoveUntil` на экран входа |
+
+**Для сохранения последнего экрана** давайте маршрутам имена (`'/landing'`) и используйте `NavigatorObserver`.
+
+## Учимся: навык 4. BottomSheet и пикеры даты и времени
+
+**Паттерн «показать и дождаться ответа»:** все эти функции асинхронные, возвращают значение, когда пользователь выберет, или `null`, если закрыл.
+
+```dart
+// Select: панель снизу
+final picked = await showModalBottomSheet<String>(
+  context: context,
+  builder: (_) => OptionsList(options: options),   // внутри: Navigator.pop(context, value)
+);
+if (picked == null) return;              // закрыли — ничего не делаем
+setState(() => selected = picked);
+
+// Дата и время
+final date = await showDatePicker(
+  context: context,
+  initialDate: DateTime.now(),
+  firstDate: DateTime.now(),
+  lastDate: DateTime(2100),
+);
+if (date == null) return;
+final time = await showTimePicker(context: context, initialTime: TimeOfDay.now());
+if (time == null) return;
+final start = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+```
+
+**Особенности:** после каждого `await` в виджете проверяйте `mounted`; `null` — нормальный результат (пользователь отменил); системные пикеры оцениваются отдельным пунктом «стандартные для системы элементы».
