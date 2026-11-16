@@ -630,7 +630,7 @@
     if (!s) {
       h += '<p class="lead">Запустите таймер на нужное время, во время работы записывайте, что непонятно или что забыли. В конце симуляция сохранится в историю с датой, заметками и оценкой.</p>';
       h += '<section class="block"><h2 class="blk">Настройка таймера</h2><div class="presets" id="presets">' +
-        [['Спринт 1', 90], ['Спринт 2', 70], ['Спринты 3–5', 60], ['Спринт 6', 180], ['20 мин', 20]].map(function (p) { return '<button type="button" class="chipbtn" data-min="' + p[1] + '">' + p[0] + ' · ' + fmtShort(p[1] * 60000) + '</button>'; }).join('') + '</div>' +
+        [['Спринт 1 (колледж)', 360], ['Сессия 70 мин', 70], ['Сессия 75 мин', 75], ['Спринт 1 (по заданию)', 90], ['Спринт 2', 70], ['Спринты 3–5', 60], ['Спринт 6', 180], ['20 мин', 20]].map(function (p) { return '<button type="button" class="chipbtn" data-min="' + p[1] + '">' + p[0] + ' · ' + fmtShort(p[1] * 60000) + '</button>'; }).join('') + '</div>' +
         '<div class="timeform"><div><label for="sH">Часы</label><input id="sH" type="number" min="0" max="18" value="1" inputmode="numeric"></div><div><label for="sM">Минуты</label><input id="sM" type="number" min="0" max="59" value="30" inputmode="numeric"></div></div>' +
         '<label for="sT">Название (необязательно)</label><input id="sT" type="text" maxlength="60" placeholder="Например: Спринт 1, UIKit">' +
         '<div class="row"><button class="cta green" type="button" id="simStart">Запустить симуляцию</button></div></section>';
